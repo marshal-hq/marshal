@@ -1,0 +1,50 @@
+# Marshal configuration
+# Place this file at your project root as marshal.yml
+# Full reference: https://marshalhq.dev/docs/config
+
+version: 1
+
+scan:
+  scopes:
+    - compile
+    - runtime
+    # - test       # uncomment to scan test dependencies
+    # - provided   # uncomment to scan provided dependencies
+  include-transitive: true
+  depth: -1          # -1 = unlimited depth
+
+rules:
+  disabled: []
+    # - TYPOSQUAT_PROXIMITY  # disable if you manage many internal packages
+  overrides: {}
+    # INSTALL_SCRIPT_ADDED:
+    #   weight: 60           # raise weight for higher-risk environments
+
+thresholds:
+  fail-on: red         # red | orange | yellow
+  warn-on: orange
+
+allowlist:
+  packages: []
+    # - "org.springframework:*"     # trust all Spring packages
+    # - "com.fasterxml.jackson:*"   # trust all Jackson packages
+
+registries:
+  - id: central
+    url: https://repo1.maven.org/maven2/
+    enabled: true
+  # - id: internal
+  #   url: https://nexus.company.com/repository/maven-public/
+  #   enabled: true
+
+notifications:
+  slack:
+    webhook: ${MARSHAL_SLACK_WEBHOOK}
+    min-level: red
+  email:
+    to: ""
+    min-level: orange
+
+output:
+  format: human        # human | json | markdown
+  color: auto          # auto | always | never
