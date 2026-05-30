@@ -35,8 +35,10 @@ public class PomDependencyResolver {
 
             List<Coordinates> result = new ArrayList<>();
             for (org.apache.maven.model.Dependency dep : model.getDependencies()) {
-                String version = dep.getVersion();
-                if (version == null || version.startsWith("$")) continue;
+                if (isExcludedScope(dep.getScope())) continue;
+
+                String version = resolveVersion(dep.getVersion(), model);
+
                 result.add(new Coordinates(dep.getGroupId(), dep.getArtifactId(), version));
             }
             return result;
@@ -44,6 +46,29 @@ public class PomDependencyResolver {
             log.error("Failed to resolve dependencies from {}: {}", pomPath, e.getMessage());
             return List.of();
         }
+    }
+
+    private static boolean isExcludedScope(String scope) {
+        // null scope means compile (Maven default) — include it
+        return "test".equals(scope) || "provided".equals(scope) || "system".equals(scope);
+    }
+
+    private static String resolveVersion(String raw, org.apache.maven.model.Model model) {
+        if (raw == null) return "UNRESOLVED";
+        if (raw.startsWith("${") && raw.endsWith("}")) {
+            String propName = raw.substring(2, raw.length() - 1);
+            String resolved = model.getProperties().getProperty(propName);
+            if (resolved == null) {
+                log.warn("Unresolvable property '{}' — dependency included with UNRESOLVED version", propName);
+                return "UNRESOLVED";
+            }
+            return resolved;
+        }
+        if (raw.startsWith("$")) {
+            log.warn("Unresolvable version expression '{}' — dependency included with UNRESOLVED version", raw);
+            return "UNRESOLVED";
+        }
+        return raw;
     }
 
     private org.apache.maven.model.Model parsePom(Path pomPath) {

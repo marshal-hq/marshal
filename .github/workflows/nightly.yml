@@ -1,0 +1,33 @@
+name: Nightly Integration Tests
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 2am UTC every night
+  workflow_dispatch:       # allow manual trigger
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Run integration tests
+        run: ./gradlew :marshal-resolvers:integrationTest
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: marshal-resolvers/build/reports/tests/integrationTest/
