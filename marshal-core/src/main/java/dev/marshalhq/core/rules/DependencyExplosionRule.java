@@ -13,8 +13,7 @@ public class DependencyExplosionRule implements Rule {
         int prev = ctx.previous().dependencyCount();
         if (prev > 0 && cur > prev * 3) {
             return new RuleResult(25, Severity.ORANGE,
-                "Dependency count grew from " + prev + " to " + cur +
-                " (" + (cur / prev) + "x increase)");
+                String.format("Dependency count grew from %d to %d (%.1fx increase)", prev, cur, (double) cur / prev));
         }
         return new RuleResult(0, Severity.GREEN, "");
     }

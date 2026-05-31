@@ -5,4 +5,5 @@ dependencies {
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.0")
     implementation("org.xerial:sqlite-jdbc:3.45.1.0")
     implementation("org.slf4j:slf4j-api:2.0.12")
+    implementation("org.apache.maven:maven-model:3.9.6")
 }
