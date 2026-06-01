@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -132,6 +133,21 @@ class MavenCentralClientTest {
         VersionMetadata meta = client().fetchMetadata(COORDS);
 
         assertThat(meta.dependencyCount()).isEqualTo(2);
+    }
+
+    @Test
+    void extractKeyId_realCommonsLang3Asc_returnsKnownKeyId() throws Exception {
+        byte[] ascBytes;
+        try (InputStream in = getClass().getClassLoader()
+                .getResourceAsStream("commons-lang3-3.14.0.jar.asc")) {
+            assertThat(in).as("test resource commons-lang3-3.14.0.jar.asc missing").isNotNull();
+            ascBytes = in.readAllBytes();
+        }
+
+        String keyId = MavenCentralClient.extractKeyId(ascBytes);
+
+        // Apache Commons signing key — last 8 bytes of fingerprint 2DB4F1EF…A11262CB
+        assertThat(keyId).isEqualTo("86FDC7E2A11262CB");
     }
 
     // --- helpers ---

@@ -17,7 +17,6 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -89,7 +88,7 @@ public class MavenCentralClient {
                 .GET().build();
             HttpResponse<String> sigResp = sendWithRetry(sigReq);
             if (sigResp.statusCode() == 200) {
-                sigKeyId = extractKeyId(decodeArmor(sigResp.body()));
+                sigKeyId = extractKeyId(sigResp.body().getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 sigStatus = SignatureStatus.PRESENT;
             } else if (sigResp.statusCode() == 404) {
                 sigStatus = SignatureStatus.ABSENT;
@@ -177,70 +176,23 @@ public class MavenCentralClient {
     }
 
     /**
-     * Strips ASCII armor headers/checksum and base64-decodes the OpenPGP binary body.
+     * Extracts the 64-bit Issuer Key ID from an ASCII-armored OpenPGP signature.
+     * Uses BouncyCastle to handle v4/v6 formats, hashed/unhashed subpackets, and
+     * all subpacket length encodings correctly.
+     * Returns a 16-char uppercase hex string, or null if parsing fails.
      */
-    static byte[] decodeArmor(String armored) {
-        try {
-            StringBuilder b64 = new StringBuilder();
-            boolean inBody = false;
-            for (String line : armored.split("\n")) {
-                String t = line.trim();
-                if (t.startsWith("-----BEGIN")) { inBody = false; continue; }
-                if (t.startsWith("-----END")) break;
-                if (t.isEmpty() && !inBody) { inBody = true; continue; }
-                if (!inBody) continue;
-                if (t.startsWith("=")) break; // CRC24 checksum line
-                b64.append(t);
+    static String extractKeyId(byte[] armoredSigBytes) {
+        if (armoredSigBytes == null || armoredSigBytes.length == 0) return null;
+        try (java.io.InputStream in = org.bouncycastle.openpgp.PGPUtil.getDecoderStream(
+                new java.io.ByteArrayInputStream(armoredSigBytes))) {
+            org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory factory =
+                new org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory(in);
+            Object obj = factory.nextObject();
+            if (obj instanceof org.bouncycastle.openpgp.PGPSignatureList sigs && !sigs.isEmpty()) {
+                return String.format("%016X", sigs.get(0).getKeyID());
             }
-            return Base64.getDecoder().decode(b64.toString());
         } catch (Exception e) {
-            return new byte[0];
-        }
-    }
-
-    /**
-     * Extracts the 8-byte Issuer Key ID (subpacket type 0x10) from an OpenPGP v4
-     * Signature packet binary (RFC 4880 §5.2.3). Returns a 16-char hex string or null.
-     */
-    static String extractKeyId(byte[] sig) {
-        if (sig == null || sig.length < 10) return null;
-        try {
-            int pos = 0;
-            // Advance past the packet header and its length field
-            int header = sig[pos++] & 0xFF;
-            boolean newFmt = (header & 0x40) != 0;
-            if (newFmt) {
-                int first = sig[pos++] & 0xFF;
-                if (first >= 192 && first < 224) pos++;      // 2-byte length
-                else if (first == 255) pos += 4;             // 5-byte length
-            } else {
-                switch (header & 0x03) {                     // old-format length type
-                    case 0 -> pos++;
-                    case 1 -> pos += 2;
-                    case 2 -> pos += 4;
-                }
-            }
-            if (pos >= sig.length || (sig[pos] & 0xFF) != 4) return null; // v4 only
-            pos += 4; // version + sigType + pubKeyAlgo + hashAlgo
-            if (pos + 2 > sig.length) return null;
-            int hashedLen = ((sig[pos] & 0xFF) << 8) | (sig[pos + 1] & 0xFF);
-            pos += 2 + hashedLen;
-            if (pos + 2 > sig.length) return null;
-            int unhashedLen = ((sig[pos] & 0xFF) << 8) | (sig[pos + 1] & 0xFF);
-            pos += 2;
-            int end = Math.min(pos + unhashedLen, sig.length);
-            while (pos < end) {
-                int subLen = sig[pos++] & 0xFF; // length includes type byte, not itself
-                if (subLen == 0 || pos + subLen > end) break;
-                if ((sig[pos] & 0xFF) == 0x10 && subLen == 9) { // Issuer Key ID subpacket
-                    StringBuilder sb = new StringBuilder();
-                    for (int i = 1; i <= 8; i++) sb.append(String.format("%02X", sig[pos + i] & 0xFF));
-                    return sb.toString();
-                }
-                pos += subLen;
-            }
-        } catch (Exception ignored) {
-            // malformed signature packet — caller treats as unsigned
+            log.warn("Failed to parse GPG signature: {}", e.getMessage());
         }
         return null;
     }
