@@ -3,6 +3,7 @@ package dev.marshalhq.registry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.marshalhq.core.Coordinates;
+import dev.marshalhq.core.SignatureStatus;
 import dev.marshalhq.core.VersionMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,10 +32,14 @@ public class MavenCentralClient {
     private final ObjectMapper mapper;
 
     public MavenCentralClient() {
-        this.http = HttpClient.newBuilder()
+        this(HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_2)
             .executor(Executors.newVirtualThreadPerTaskExecutor())
-            .build();
+            .build());
+    }
+
+    MavenCentralClient(HttpClient http) {
+        this.http = http;
         this.mapper = new ObjectMapper();
     }
 
@@ -64,33 +69,71 @@ public class MavenCentralClient {
     }
 
     /**
-     * Fetches full metadata for a specific version. Never returns null:
-     * partial failures produce stubs with hasSig=false, depCount=0, etc.
-     * A failed fetch returns a stub rather than null so callers never NPE.
+     * Fetches full metadata for a specific version. Never returns null.
+     * On partial failure: signatureStatus=UNKNOWN (not ABSENT), depCount=-1 (not 0).
+     * Rules must abstain on these sentinels to avoid false findings from network errors.
      */
     public VersionMetadata fetchMetadata(Coordinates coords) {
         Instant publishedAt = fetchPublishedAt(coords);
-        String sigKeyId = fetchSigKeyId(coords);
-        boolean hasSig = sigKeyId != null;
 
-        org.apache.maven.model.Model pom = fetchPomModel(coords);
-        int depCount = 0;
+        // --- Signature check (retry on 429) ---
+        SignatureStatus sigStatus = SignatureStatus.UNKNOWN;
+        String sigKeyId = null;
+        String ascUrl = REPO_BASE + "/" + pomBasePath(coords) +
+            coords.artifactId() + "-" + coords.version() + ".jar.asc";
+        try {
+            HttpRequest sigReq = HttpRequest.newBuilder()
+                .uri(URI.create(ascUrl))
+                .header("User-Agent", "marshal-cli/0.1.0")
+                .timeout(REQUEST_TIMEOUT)
+                .GET().build();
+            HttpResponse<String> sigResp = sendWithRetry(sigReq);
+            if (sigResp.statusCode() == 200) {
+                sigKeyId = extractKeyId(decodeArmor(sigResp.body()));
+                sigStatus = SignatureStatus.PRESENT;
+            } else if (sigResp.statusCode() == 404) {
+                sigStatus = SignatureStatus.ABSENT;
+            }
+            // other statuses (429 exhausted, 5xx) → UNKNOWN (default)
+        } catch (Exception e) {
+            log.debug("Sig fetch failed for {} — {}", coords.toGav(), e.getMessage());
+            // sigStatus stays UNKNOWN
+        }
+
+        // --- POM fetch (retry on 429) ---
+        int depCount = -1;  // -1 = POM fetch failed; rules abstain rather than treat as 0
         String repoUrl = null;
-        if (pom != null) {
-            depCount = pom.getDependencies().size();
-            if (pom.getScm() != null) repoUrl = pom.getScm().getUrl();
+        String pomUrl = REPO_BASE + "/" + pomBasePath(coords) +
+            coords.artifactId() + "-" + coords.version() + ".pom";
+        try {
+            HttpRequest pomReq = HttpRequest.newBuilder()
+                .uri(URI.create(pomUrl))
+                .header("User-Agent", "marshal-cli/0.1.0")
+                .timeout(REQUEST_TIMEOUT)
+                .GET().build();
+            HttpResponse<String> pomResp = sendWithRetry(pomReq);
+            if (pomResp.statusCode() == 200) {
+                org.apache.maven.model.Model pom = new org.apache.maven.model.io.xpp3.MavenXpp3Reader()
+                    .read(new StringReader(pomResp.body()));
+                depCount = pom.getDependencies().size();
+                if (pom.getScm() != null) repoUrl = pom.getScm().getUrl();
+            }
+            // non-200 (including 404, 429 exhausted) → depCount stays -1
+        } catch (Exception e) {
+            log.debug("POM fetch failed for {} — {}", coords.toGav(), e.getMessage());
+            // depCount stays -1
         }
 
         return new VersionMetadata(
             coords,
-            null,       // publisherEmail: not exposed by Maven Central API
-            sigKeyId,   // gpgKeyFingerprint: extracted from .asc signature file
-            hasSig,
-            List.of(),  // installScripts: Maven has no install hooks
-            depCount,   // from POM dependency count
-            repoUrl,    // from POM <scm><url>
+            null,           // publisherEmail: not exposed by Maven Central API
+            sigKeyId,       // gpgKeyFingerprint: from .asc; null when ABSENT or UNKNOWN
+            sigStatus,
+            List.of(),      // installScripts: Maven has no install hooks
+            depCount,       // from POM; -1 if fetch failed
+            repoUrl,        // from POM <scm>; null if fetch failed or no <scm>
             publishedAt != null ? publishedAt : Instant.EPOCH,
-            false       // isYanked: Maven Central is immutable; rule inert on this ecosystem
+            false           // isYanked: Maven Central is immutable
         );
     }
 
@@ -110,47 +153,6 @@ public class MavenCentralClient {
             return ts > 0 ? Instant.ofEpochMilli(ts) : null;
         } catch (Exception e) {
             log.debug("Could not fetch timestamp for {} — {}", coords.toGav(), e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Fetches the .asc signature file and extracts the OpenPGP key ID.
-     * Returns the 16-hex-char key ID string if the signature exists, null otherwise.
-     * The key ID is used as gpgKeyFingerprint for NewMaintainerRule fingerprint detection.
-     */
-    private String fetchSigKeyId(Coordinates coords) {
-        String url = REPO_BASE + "/" + pomBasePath(coords) +
-            coords.artifactId() + "-" + coords.version() + ".jar.asc";
-        try {
-            HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("User-Agent", "marshal-cli/0.1.0")
-                .timeout(REQUEST_TIMEOUT)
-                .GET().build();
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) return null;
-            return extractKeyId(decodeArmor(resp.body()));
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private org.apache.maven.model.Model fetchPomModel(Coordinates coords) {
-        String url = REPO_BASE + "/" + pomBasePath(coords) +
-            coords.artifactId() + "-" + coords.version() + ".pom";
-        try {
-            HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("User-Agent", "marshal-cli/0.1.0")
-                .timeout(REQUEST_TIMEOUT)
-                .GET().build();
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) return null;
-            return new org.apache.maven.model.io.xpp3.MavenXpp3Reader()
-                .read(new StringReader(resp.body()));
-        } catch (Exception e) {
-            log.debug("Could not fetch/parse POM for {} — {}", coords.toGav(), e.getMessage());
             return null;
         }
     }

@@ -22,7 +22,7 @@ public class UaParserJsReplayTest {
 
         VersionMetadata previous = new VersionMetadata(
             new Coordinates("com.example", "ua-parser-js", "0.7.28"),
-            "faisalman@example.com", "LEGITKEY", true,
+            "faisalman@example.com", "LEGITKEY", SignatureStatus.PRESENT,
             List.of(), 2, "https://github.com/faisalman/ua-parser-js",
             Instant.now().minusSeconds(86400 * 14), false
         );
@@ -31,7 +31,7 @@ public class UaParserJsReplayTest {
         VersionMetadata current = new VersionMetadata(
             coords,
             "attacker@protonmail.com",   // new maintainer
-            null, false,                 // signature dropped
+            null, SignatureStatus.ABSENT, // signature dropped
             List.of("postinstall: malicious.sh"),
             2,
             "https://github.com/faisalman/ua-parser-js",

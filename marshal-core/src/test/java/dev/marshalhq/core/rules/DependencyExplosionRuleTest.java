@@ -58,4 +58,20 @@ class DependencyExplosionRuleTest {
         RuleResult result = rule.evaluate(TestFixtures.ctx(current, previous));
         assertThat(result.scoreContribution()).isEqualTo(25);
     }
+
+    @Test
+    void abstainWhenCurrentDepCountIsMinusOne() {
+        VersionMetadata current = TestFixtures.metadata("2.0.0", true, "alice@example.com", -1, "https://github.com/example/test", false);
+        VersionMetadata previous = TestFixtures.metadata("1.0.0", true, "alice@example.com", 5, "https://github.com/example/test", false);
+        RuleResult result = rule.evaluate(TestFixtures.ctx(current, previous));
+        assertThat(result.scoreContribution()).isEqualTo(0);
+    }
+
+    @Test
+    void abstainWhenPreviousDepCountIsMinusOne() {
+        VersionMetadata current = TestFixtures.metadata("2.0.0", true, "alice@example.com", 40, "https://github.com/example/test", false);
+        VersionMetadata previous = TestFixtures.metadata("1.0.0", true, "alice@example.com", -1, "https://github.com/example/test", false);
+        RuleResult result = rule.evaluate(TestFixtures.ctx(current, previous));
+        assertThat(result.scoreContribution()).isEqualTo(0);
+    }
 }

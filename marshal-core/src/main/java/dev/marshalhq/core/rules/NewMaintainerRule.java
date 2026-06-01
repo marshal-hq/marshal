@@ -14,7 +14,11 @@ public class NewMaintainerRule implements Rule {
 
         boolean emailChanged = cur.publisherEmail() != null
             && !cur.publisherEmail().equals(prev.publisherEmail());
-        boolean keyChanged = cur.gpgKeyFingerprint() != null
+        // Only compare fingerprints when both fetches succeeded with a real signature;
+        // UNKNOWN means the fetch failed — null fingerprint does not mean unsigned.
+        boolean keyChanged = cur.signatureStatus() == SignatureStatus.PRESENT
+            && prev.signatureStatus() == SignatureStatus.PRESENT
+            && cur.gpgKeyFingerprint() != null
             && prev.gpgKeyFingerprint() != null
             && !cur.gpgKeyFingerprint().equals(prev.gpgKeyFingerprint());
 

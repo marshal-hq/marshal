@@ -23,7 +23,7 @@ public class NodeIpcReplayTest {
 
         VersionMetadata previous = new VersionMetadata(
             new Coordinates("com.example", "node-ipc", "10.1.0"),
-            "riaevangelist@example.com", "SIGKEY", true,
+            "riaevangelist@example.com", "SIGKEY", SignatureStatus.PRESENT,
             List.of(), 8,
             "https://github.com/RIAEvangelist/node-ipc",
             Instant.now().minusSeconds(86400 * 7), false
@@ -33,7 +33,7 @@ public class NodeIpcReplayTest {
         VersionMetadata current = new VersionMetadata(
             coords,
             "riaevangelist@example.com", // same maintainer
-            null, false,                 // signature dropped — protest build was unsigned
+            null, SignatureStatus.ABSENT, // signature dropped — protest build was unsigned
             List.of(), 30,               // peacenotwar + transitive deps: 8 → 30
             "https://github.com/RIAEvangelist/node-ipc",
             Instant.now(), true          // yanked after community backlash

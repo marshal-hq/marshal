@@ -8,9 +8,10 @@ public class MissingSignatureRule implements Rule {
 
     @Override
     public RuleResult evaluate(PackageContext ctx) {
-        if (!ctx.current().hasGpgSignature()) {
-            return new RuleResult(15, Severity.YELLOW, "No GPG signature present for this release");
-        }
-        return new RuleResult(0, Severity.GREEN, "");
+        return switch (ctx.current().signatureStatus()) {
+            case ABSENT  -> new RuleResult(15, Severity.YELLOW, "No GPG signature present for this release");
+            case UNKNOWN -> new RuleResult(0, Severity.GREEN, "");  // abstain: fetch failed, cannot distinguish from unsigned
+            case PRESENT -> new RuleResult(0, Severity.GREEN, "");
+        };
     }
 }
