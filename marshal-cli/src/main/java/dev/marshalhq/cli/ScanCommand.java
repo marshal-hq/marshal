@@ -174,7 +174,7 @@ public class ScanCommand implements Callable<Integer> {
         // Step 5: route to reporter.
         PrintWriter writer = new PrintWriter(System.out, true);
         Reporter reporter = switch (outputFormat) {
-            case HUMAN -> new PlainTextReporter();
+            case HUMAN -> new TerminalReporter();
             case JSON  -> new PlainTextReporter(); // Block 3 replaces this
             case MD    -> new PlainTextReporter(); // Block 4 replaces this
         };
@@ -288,12 +288,8 @@ public class ScanCommand implements Callable<Integer> {
     public enum FailOn { FAIL, WARN, NEVER }
 
     // ---------------------------------------------------------------------------
-    // Reporter (stub — Blocks 2/3/4 replace implementations)
+    // Fallback reporter (used for JSON/MD until Blocks 3/4)
     // ---------------------------------------------------------------------------
-
-    interface Reporter {
-        void report(List<Finding> findings, PrintWriter out);
-    }
 
     static class PlainTextReporter implements Reporter {
         @Override
