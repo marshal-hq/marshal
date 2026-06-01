@@ -5,6 +5,7 @@ plugins {
 dependencies {
     implementation(project(":marshal-core"))
     implementation(project(":marshal-resolvers"))
+    implementation(project(":marshal-registry"))
     implementation("info.picocli:picocli:4.7.5")
     annotationProcessor("info.picocli:picocli-codegen:4.7.5")
     implementation("org.slf4j:slf4j-api:2.0.12")

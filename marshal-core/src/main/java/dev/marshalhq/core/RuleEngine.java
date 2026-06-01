@@ -5,11 +5,17 @@ import java.util.List;
 public class RuleEngine {
     private final List<Rule> rules;
 
+    public record EvaluationDetail(RiskScore score, List<RuleResult> firedRules) {}
+
     public RuleEngine(List<Rule> rules) {
         this.rules = rules;
     }
 
     public RiskScore evaluate(PackageContext ctx) {
+        return evaluateWithDetails(ctx).score();
+    }
+
+    public EvaluationDetail evaluateWithDetails(PackageContext ctx) {
         List<RuleResult> fired = rules.stream()
             .map(r -> r.evaluate(ctx))
             .filter(r -> r.scoreContribution() > 0)
@@ -28,7 +34,7 @@ public class RuleEngine {
         }
 
         int score = Math.min(100, raw);
-        return new RiskScore(score, RiskScore.levelFor(score));
+        return new EvaluationDetail(new RiskScore(score, RiskScore.levelFor(score)), fired);
     }
 
     public List<Rule> rules() { return rules; }
