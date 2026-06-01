@@ -29,24 +29,45 @@ public class MavenCentralClient {
 
     private final HttpClient http;
     private final ObjectMapper mapper;
+    private final MetadataCache cache;
 
     public MavenCentralClient() {
-        this(HttpClient.newBuilder()
-            .version(HttpClient.Version.HTTP_2)
-            .executor(Executors.newVirtualThreadPerTaskExecutor())
-            .build());
+        this(defaultHttpClient(), null);
     }
 
+    public MavenCentralClient(MetadataCache cache) {
+        this(defaultHttpClient(), cache);
+    }
+
+    /** Package-private: used in tests to inject a mock HttpClient. */
     MavenCentralClient(HttpClient http) {
+        this(http, null);
+    }
+
+    /** Package-private: used in tests to inject both a mock HttpClient and a cache. */
+    MavenCentralClient(HttpClient http, MetadataCache cache) {
         this.http = http;
         this.mapper = new ObjectMapper();
+        this.cache = cache;
+    }
+
+    private static HttpClient defaultHttpClient() {
+        return HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_2)
+            .executor(Executors.newVirtualThreadPerTaskExecutor())
+            .build();
     }
 
     /**
      * Returns version strings for the given artifact, most recent first.
-     * Block 1 scan coordinator uses this to resolve previous/history versions.
+     * Result is served from the cache when available; fetched and cached on miss.
      */
     public List<String> getVersionHistory(String groupId, String artifactId) {
+        if (cache != null) {
+            List<String> cached = cache.getVersionHistory(groupId, artifactId);
+            if (cached != null) return cached;
+        }
+
         String url = SEARCH_BASE + "?q=g:%22" + groupId + "%22+AND+a:%22" + artifactId +
             "%22&core=gav&rows=20&wt=json";
         try {
@@ -60,6 +81,7 @@ public class MavenCentralClient {
             for (JsonNode doc : root.path("response").path("docs")) {
                 versions.add(doc.path("v").asText());
             }
+            if (cache != null) cache.putVersionHistory(groupId, artifactId, versions);
             return versions;
         } catch (Exception e) {
             log.warn("Failed to fetch version history for {}:{} — {}", groupId, artifactId, e.getMessage());
@@ -69,10 +91,16 @@ public class MavenCentralClient {
 
     /**
      * Fetches full metadata for a specific version. Never returns null.
+     * Served from cache when available; on miss, fetches and caches the result.
      * On partial failure: signatureStatus=UNKNOWN (not ABSENT), depCount=-1 (not 0).
      * Rules must abstain on these sentinels to avoid false findings from network errors.
      */
     public VersionMetadata fetchMetadata(Coordinates coords) {
+        if (cache != null) {
+            VersionMetadata cached = cache.get(coords);
+            if (cached != null) return cached;
+        }
+
         Instant publishedAt = fetchPublishedAt(coords);
 
         // --- Signature check (retry on 429) ---
@@ -96,7 +124,6 @@ public class MavenCentralClient {
             // other statuses (429 exhausted, 5xx) → UNKNOWN (default)
         } catch (Exception e) {
             log.debug("Sig fetch failed for {} — {}", coords.toGav(), e.getMessage());
-            // sigStatus stays UNKNOWN
         }
 
         // --- POM fetch (retry on 429) ---
@@ -120,10 +147,9 @@ public class MavenCentralClient {
             // non-200 (including 404, 429 exhausted) → depCount stays -1
         } catch (Exception e) {
             log.debug("POM fetch failed for {} — {}", coords.toGav(), e.getMessage());
-            // depCount stays -1
         }
 
-        return new VersionMetadata(
+        VersionMetadata result = new VersionMetadata(
             coords,
             null,           // publisherEmail: not exposed by Maven Central API
             sigKeyId,       // gpgKeyFingerprint: from .asc; null when ABSENT or UNKNOWN
@@ -134,6 +160,8 @@ public class MavenCentralClient {
             publishedAt != null ? publishedAt : Instant.EPOCH,
             false           // isYanked: Maven Central is immutable
         );
+        if (cache != null) cache.put(coords, result);
+        return result;
     }
 
     private Instant fetchPublishedAt(Coordinates coords) {

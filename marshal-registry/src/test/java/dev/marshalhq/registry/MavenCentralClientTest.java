@@ -15,6 +15,8 @@ import java.io.InputStream;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -133,6 +135,71 @@ class MavenCentralClientTest {
         VersionMetadata meta = client().fetchMetadata(COORDS);
 
         assertThat(meta.dependencyCount()).isEqualTo(2);
+    }
+
+    @Test
+    void cacheHit_fetchMetadata_skipsHttp() throws Exception {
+        MetadataCache cache = new MetadataCache("jdbc:sqlite::memory:");
+        VersionMetadata stored = new dev.marshalhq.core.VersionMetadata(
+            COORDS, null, null, SignatureStatus.PRESENT, List.of(), 3,
+            "https://github.com/example/lib", Instant.EPOCH, false);
+        cache.put(COORDS, stored);
+
+        MavenCentralClient client = new MavenCentralClient(mockHttp, cache);
+        VersionMetadata result = client.fetchMetadata(COORDS);
+
+        assertThat(result.signatureStatus()).isEqualTo(SignatureStatus.PRESENT);
+        assertThat(result.dependencyCount()).isEqualTo(3);
+        verifyNoInteractions(mockHttp);  // no HTTP calls on cache hit
+    }
+
+    @Test
+    void cacheMiss_fetchMetadata_storesResult() throws Exception {
+        MetadataCache cache = new MetadataCache("jdbc:sqlite::memory:");
+        HttpResponse<String> search = resp(200, EMPTY_SEARCH_JSON);
+        HttpResponse<String> asc404 = resp(404, "");
+        HttpResponse<String> pom    = resp(200, MINIMAL_POM);
+
+        doReturn(search).doReturn(asc404).doReturn(pom)
+            .when(mockHttp).send(any(HttpRequest.class), any());
+
+        MavenCentralClient client = new MavenCentralClient(mockHttp, cache);
+        client.fetchMetadata(COORDS);
+
+        // second call must hit cache, not HTTP
+        reset(mockHttp);
+        VersionMetadata second = client.fetchMetadata(COORDS);
+        assertThat(second.signatureStatus()).isEqualTo(SignatureStatus.ABSENT);
+        verifyNoInteractions(mockHttp);
+    }
+
+    @Test
+    void cacheHit_getVersionHistory_skipsHttp() throws Exception {
+        MetadataCache cache = new MetadataCache("jdbc:sqlite::memory:");
+        cache.putVersionHistory("com.example", "some-lib", List.of("2.0.0", "1.0.0"));
+
+        MavenCentralClient client = new MavenCentralClient(mockHttp, cache);
+        List<String> versions = client.getVersionHistory("com.example", "some-lib");
+
+        assertThat(versions).containsExactly("2.0.0", "1.0.0");
+        verifyNoInteractions(mockHttp);
+    }
+
+    @Test
+    void cacheMiss_getVersionHistory_storesResult() throws Exception {
+        MetadataCache cache = new MetadataCache("jdbc:sqlite::memory:");
+        String versionJson = "{\"response\":{\"docs\":[{\"v\":\"1.0.0\"},{\"v\":\"0.9.0\"}]}}";
+        doReturn(resp(200, versionJson))
+            .when(mockHttp).send(any(HttpRequest.class), any());
+
+        MavenCentralClient client = new MavenCentralClient(mockHttp, cache);
+        List<String> first = client.getVersionHistory("com.example", "some-lib");
+        assertThat(first).containsExactly("1.0.0", "0.9.0");
+
+        reset(mockHttp);
+        List<String> second = client.getVersionHistory("com.example", "some-lib");
+        assertThat(second).containsExactly("1.0.0", "0.9.0");
+        verifyNoInteractions(mockHttp);
     }
 
     @Test
