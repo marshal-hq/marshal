@@ -39,6 +39,10 @@ public class ScanCommand implements Callable<Integer> {
     @Option(names = "--config", description = "Path to marshal.yml config file")
     Path configPath;
 
+    @Option(names = "--slack-webhook",
+            description = "Slack webhook URL. Overrides notifications.slack.webhook in marshal.yml.")
+    String slackWebhookFlag = "";
+
     private final MavenCentralClient injectedClient;
     private final PomDependencyResolver injectedResolver;
 
@@ -134,6 +138,14 @@ public class ScanCommand implements Callable<Integer> {
         };
         reporter.report(findings, writer);
         writer.flush();
+
+        // Slack alert — CLI flag takes precedence over config; no-op when webhook is blank
+        String effectiveWebhook = !slackWebhookFlag.isBlank()
+            ? slackWebhookFlag
+            : config.getNotifications().getSlack().getWebhook();
+        Severity slackMinLevel = CliHelper.parseLevel(
+            config.getNotifications().getSlack().getMinLevel(), Severity.RED);
+        new SlackNotifier().notify(findings, effectiveWebhook, slackMinLevel);
 
         return CliHelper.computeExitCode(findings, threshold, failOn, writer);
     }

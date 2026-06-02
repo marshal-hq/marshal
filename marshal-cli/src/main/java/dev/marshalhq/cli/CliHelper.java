@@ -103,6 +103,11 @@ class CliHelper {
         }
     }
 
+    static Severity parseLevel(String s, Severity fallback) {
+        try { return Severity.valueOf(s.toUpperCase()); }
+        catch (Exception e) { return fallback; }
+    }
+
     static VersionMetadata stub(Coordinates coords) {
         return new VersionMetadata(coords, null, null, SignatureStatus.UNKNOWN,
             List.of(), -1, null, Instant.EPOCH, false);

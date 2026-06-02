@@ -1,6 +1,8 @@
 package dev.marshalhq.cli;
 
 import dev.marshalhq.core.*;
+import dev.marshalhq.core.config.MarshalConfig;
+import dev.marshalhq.core.config.MarshalConfigLoader;
 import dev.marshalhq.registry.MavenCentralClient;
 import dev.marshalhq.resolvers.PomDependencyResolver;
 import picocli.CommandLine.Command;
@@ -52,6 +54,10 @@ public class DiffCommand implements Callable<Integer> {
     @Option(names = "--config", description = "Path to marshal.yml config file")
     Path configPath;
 
+    @Option(names = "--slack-webhook",
+            description = "Slack webhook URL. Overrides notifications.slack.webhook in marshal.yml.")
+    String slackWebhookFlag = "";
+
     private final MavenCentralClient injectedClient;
     private final PomDependencyResolver injectedResolver;
 
@@ -68,6 +74,7 @@ public class DiffCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        MarshalConfig config = MarshalConfigLoader.load(configPath);
         PomDependencyResolver resolver = injectedResolver != null
             ? injectedResolver : new PomDependencyResolver();
         MavenCentralClient client = injectedClient != null
@@ -147,6 +154,13 @@ public class DiffCommand implements Callable<Integer> {
         };
         reporter.report(findings, writer);
         writer.flush();
+
+        String effectiveWebhook = !slackWebhookFlag.isBlank()
+            ? slackWebhookFlag
+            : config.getNotifications().getSlack().getWebhook();
+        Severity slackMinLevel = CliHelper.parseLevel(
+            config.getNotifications().getSlack().getMinLevel(), Severity.RED);
+        new SlackNotifier().notify(findings, effectiveWebhook, slackMinLevel);
 
         return CliHelper.computeExitCode(findings, threshold, failOn, writer);
     }
