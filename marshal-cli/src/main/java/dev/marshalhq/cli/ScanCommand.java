@@ -177,7 +177,7 @@ public class ScanCommand implements Callable<Integer> {
         Reporter reporter = switch (outputFormat) {
             case HUMAN -> new TerminalReporter();
             case JSON  -> new JsonReporter(pomPath.toString(), scannedAt);
-            case MD    -> new PlainTextReporter(); // Block 4 replaces this
+            case MD    -> new MarkdownReporter();
         };
         reporter.report(findings, writer);
         writer.flush();
