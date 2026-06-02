@@ -17,7 +17,7 @@ public class RuleEngine {
 
     public EvaluationDetail evaluateWithDetails(PackageContext ctx) {
         List<RuleResult> fired = rules.stream()
-            .map(r -> r.evaluate(ctx))
+            .map(r -> r.evaluate(ctx).withRuleId(r.id()))
             .filter(r -> r.scoreContribution() > 0)
             .toList();
 

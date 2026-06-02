@@ -172,10 +172,11 @@ public class ScanCommand implements Callable<Integer> {
         }
 
         // Step 5: route to reporter.
+        Instant scannedAt = Instant.now();
         PrintWriter writer = new PrintWriter(System.out, true);
         Reporter reporter = switch (outputFormat) {
             case HUMAN -> new TerminalReporter();
-            case JSON  -> new PlainTextReporter(); // Block 3 replaces this
+            case JSON  -> new JsonReporter(pomPath.toString(), scannedAt);
             case MD    -> new PlainTextReporter(); // Block 4 replaces this
         };
         reporter.report(findings, writer);
