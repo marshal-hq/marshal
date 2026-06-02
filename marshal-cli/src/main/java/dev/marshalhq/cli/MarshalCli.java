@@ -8,7 +8,7 @@ import picocli.CommandLine.Command;
     mixinStandardHelpOptions = true,
     version = "marshal 0.1.0-SNAPSHOT",
     description = "Behavioral security monitoring for software dependencies.",
-    subcommands = { ScanCommand.class }
+    subcommands = { ScanCommand.class, DiffCommand.class }
 )
 public class MarshalCli implements Runnable {
     public static void main(String[] args) {

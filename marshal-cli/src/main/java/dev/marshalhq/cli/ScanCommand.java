@@ -3,25 +3,18 @@ package dev.marshalhq.cli;
 import dev.marshalhq.core.*;
 import dev.marshalhq.core.config.MarshalConfig;
 import dev.marshalhq.core.config.MarshalConfigLoader;
-import dev.marshalhq.core.rules.*;
 import dev.marshalhq.registry.MavenCentralClient;
-import dev.marshalhq.registry.MetadataCache;
 import dev.marshalhq.resolvers.PomDependencyResolver;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
 
 @Command(
     name = "scan",
@@ -46,7 +39,6 @@ public class ScanCommand implements Callable<Integer> {
     @Option(names = "--config", description = "Path to marshal.yml config file")
     Path configPath;
 
-    // --- injected for testing; null = constructed from scratch in call() ---
     private final MavenCentralClient injectedClient;
     private final PomDependencyResolver injectedResolver;
 
@@ -67,39 +59,36 @@ public class ScanCommand implements Callable<Integer> {
         PomDependencyResolver resolver = injectedResolver != null
             ? injectedResolver : new PomDependencyResolver();
         MavenCentralClient client = injectedClient != null
-            ? injectedClient : buildProductionClient(config);
+            ? injectedClient : CliHelper.buildProductionClient();
 
-        RuleEngine engine = buildEngine();
-        Set<String> highRepGAs = loadHighReputationGAs();
+        RuleEngine engine    = CliHelper.buildEngine();
+        Set<String> highReps = CliHelper.loadHighReputationGAs();
 
         List<Coordinates> allDeps = resolver.resolve(pomPath);
         if (allDeps.isEmpty()) {
-            out().println("No dependencies found in " + pomPath);
+            new PrintWriter(System.out, true).println("No dependencies found in " + pomPath);
             return 0;
         }
 
-        // Partition: UNRESOLVED versions are surfaced directly, not evaluated.
-        List<Coordinates> resolved   = allDeps.stream().filter(c -> !isUnresolved(c)).toList();
-        List<Coordinates> unresolved = allDeps.stream().filter(ScanCommand::isUnresolved).toList();
+        List<Coordinates> resolved   = allDeps.stream().filter(c -> !CliHelper.isUnresolved(c)).toList();
+        List<Coordinates> unresolved = allDeps.stream().filter(CliHelper::isUnresolved).toList();
 
         Semaphore semaphore = new Semaphore(24);
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
-        // Step 1: fetch version histories for all resolved deps in parallel.
+        // Step 1: version histories in parallel
         ConcurrentHashMap<String, List<String>> histories = new ConcurrentHashMap<>();
-        awaitAll(resolved.stream().map(coords ->
+        CliHelper.awaitAll(resolved.stream().map(coords ->
             CompletableFuture.runAsync(() -> {
-                acquire(semaphore);
+                CliHelper.acquire(semaphore);
                 try {
                     histories.put(coords.toGa(),
                         client.getVersionHistory(coords.groupId(), coords.artifactId()));
-                } finally {
-                    semaphore.release();
-                }
+                } finally { semaphore.release(); }
             }, executor)
         ).toList());
 
-        // Step 2: determine previous version for each dep.
+        // Step 2: identify previous version from history
         Map<String, Coordinates> previousCoords = new HashMap<>();
         for (Coordinates coords : resolved) {
             List<String> history = histories.getOrDefault(coords.toGa(), List.of());
@@ -110,214 +99,64 @@ public class ScanCommand implements Callable<Integer> {
             }
         }
 
-        // Step 3: fan-out metadata fetches for current + previous in parallel.
+        // Step 3: fan-out metadata fetches (current + previous) in parallel
         ConcurrentHashMap<String, VersionMetadata> metaByGav = new ConcurrentHashMap<>();
         List<Coordinates> toFetch = new ArrayList<>(resolved);
         previousCoords.values().forEach(toFetch::add);
-
-        awaitAll(toFetch.stream().map(coords ->
+        CliHelper.awaitAll(toFetch.stream().map(coords ->
             CompletableFuture.runAsync(() -> {
-                acquire(semaphore);
-                try {
-                    metaByGav.put(coords.toGav(), client.fetchMetadata(coords));
-                } finally {
-                    semaphore.release();
-                }
+                CliHelper.acquire(semaphore);
+                try { metaByGav.put(coords.toGav(), client.fetchMetadata(coords)); }
+                finally { semaphore.release(); }
             }, executor)
         ).toList());
-
         executor.shutdown();
 
-        // Step 4: assemble PackageContext and evaluate each dep.
+        // Step 4: assemble findings
         List<Finding> findings = new ArrayList<>();
-
         for (Coordinates coords : resolved) {
-            VersionMetadata current = metaByGav.get(coords.toGav());
-            if (current == null) {
-                // fetchMetadata never returns null, but be safe
-                current = stub(coords);
-            }
-
-            Coordinates prevCoords = previousCoords.get(coords.toGav());
+            VersionMetadata current  = metaByGav.getOrDefault(coords.toGav(), CliHelper.stub(coords));
+            Coordinates prevCoords   = previousCoords.get(coords.toGav());
             VersionMetadata previous = prevCoords != null ? metaByGav.get(prevCoords.toGav()) : null;
-
-            List<VersionMetadata> history = previous != null ? List.of(previous) : List.of();
-            boolean highRep = highRepGAs.contains(coords.toGa());
-
-            PackageContext ctx = new PackageContext(
-                coords, current, previous, history,
-                new TarballAnalysis(false, false, ""),
-                highRep
-            );
-
-            RuleEngine.EvaluationDetail detail = engine.evaluateWithDetails(ctx);
-            boolean unknownMeta = current.signatureStatus() == SignatureStatus.UNKNOWN
-                || current.dependencyCount() == -1;
-
-            findings.add(new Finding(
-                coords,
-                prevCoords != null ? prevCoords.version() : null,
-                coords.version(),
-                detail.score().score(),
-                detail.score().level(),
-                detail.firedRules(),
-                false,
-                unknownMeta
-            ));
+            String fromVersion       = prevCoords != null ? prevCoords.version() : null;
+            findings.add(CliHelper.toFinding(coords, fromVersion, current, previous, engine, highReps));
         }
-
-        // Add unresolved entries — no evaluation, just surfaced.
         for (Coordinates coords : unresolved) {
             findings.add(Finding.unresolved(coords));
         }
 
-        // Step 5: route to reporter.
-        Instant scannedAt = Instant.now();
+        // Step 5: report
         PrintWriter writer = new PrintWriter(System.out, true);
         Reporter reporter = switch (outputFormat) {
             case HUMAN -> new TerminalReporter();
-            case JSON  -> new JsonReporter(pomPath.toString(), scannedAt);
+            case JSON  -> new JsonReporter(pomPath.toString(), Instant.now());
             case MD    -> new MarkdownReporter();
         };
         reporter.report(findings, writer);
         writer.flush();
 
-        // Step 6: compute exit code.
-        return exitCode(findings);
+        return CliHelper.computeExitCode(findings, threshold, failOn, writer);
     }
 
-    // ---------------------------------------------------------------------------
-    // Exit code
-    // ---------------------------------------------------------------------------
-
-    int exitCode(List<Finding> findings) {
-        Optional<Severity> worst = findings.stream()
-            .filter(f -> !f.isUnresolved())
-            .map(Finding::riskLevel)
-            .max(Comparator.comparingInt(Severity::ordinal));
-
-        if (worst.isEmpty()) return 0;
-        boolean breachesThreshold = worst.get().ordinal() >= threshold.ordinal();
-        if (!breachesThreshold) return 0;
-
-        return switch (failOn) {
-            case FAIL  -> 1;
-            case WARN  -> { out().println("[WARN] marshal: findings at or above threshold '" +
-                threshold.name().toLowerCase() + "' detected."); yield 0; }
-            case NEVER -> 0;
-        };
-    }
-
-    // ---------------------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------------------
-
-    private static RuleEngine buildEngine() {
-        return new RuleEngine(List.of(
-            new MissingSignatureRule(),
-            new SignatureDroppedRule(),
-            new MajorVersionJumpRule(),
-            new NewMaintainerRule(),
-            new DependencyExplosionRule(),
-            new RepoUrlChangedRule(),
-            new YankedVersionRule()
-        ));
-    }
-
-    private static MavenCentralClient buildProductionClient(MarshalConfig config) {
-        try {
-            Path cacheDir = Paths.get(System.getProperty("user.home"), ".marshal");
-            cacheDir.toFile().mkdirs();
-            MetadataCache cache = new MetadataCache(cacheDir.resolve("metadata.db"));
-            return new MavenCentralClient(cache);
-        } catch (Exception e) {
-            log.warn("Could not initialise metadata cache, running without cache: {}", e.getMessage());
-            return new MavenCentralClient();
-        }
-    }
-
-    private static Set<String> loadHighReputationGAs() {
-        Set<String> gas = new HashSet<>();
-        try (var in = ScanCommand.class.getClassLoader()
-                .getResourceAsStream("high-reputation-gavs.txt")) {
-            if (in == null) return gas;
-            new BufferedReader(new InputStreamReader(in)).lines()
-                .map(String::trim)
-                .filter(l -> !l.isEmpty() && !l.startsWith("#"))
-                .forEach(gas::add);
-        } catch (Exception e) {
-            log.warn("Could not load high-reputation GA list: {}", e.getMessage());
-        }
-        return gas;
-    }
-
-    private static boolean isUnresolved(Coordinates c) {
-        return "UNRESOLVED".equals(c.version());
-    }
-
-    private static void acquire(Semaphore sem) {
-        try {
-            sem.acquire();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    private static void awaitAll(List<CompletableFuture<Void>> futures) {
-        try {
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-        } catch (CompletionException e) {
-            log.warn("One or more parallel fetches failed: {}", e.getCause().getMessage());
-        }
-    }
-
-    private static VersionMetadata stub(Coordinates coords) {
-        return new VersionMetadata(coords, null, null, SignatureStatus.UNKNOWN,
-            List.of(), -1, null, Instant.EPOCH, false);
-    }
-
-    private static PrintWriter out() {
-        return new PrintWriter(System.out, true);
-    }
-
-    // ---------------------------------------------------------------------------
-    // Enums
-    // ---------------------------------------------------------------------------
-
-    public enum OutputFormat { HUMAN, JSON, MD }
-
-    public enum FailOn { FAIL, WARN, NEVER }
-
-    // ---------------------------------------------------------------------------
-    // Fallback reporter (used for JSON/MD until Blocks 3/4)
-    // ---------------------------------------------------------------------------
-
+    // Fallback reporter used until Block 3/4 reporters were implemented — kept for completeness.
     static class PlainTextReporter implements Reporter {
         @Override
         public void report(List<Finding> findings, PrintWriter out) {
-            long flagged    = findings.stream().filter(f -> !f.isUnresolved() && f.riskLevel() != Severity.GREEN).count();
+            long flagged    = findings.stream()
+                .filter(f -> !f.isUnresolved() && f.riskLevel() != Severity.GREEN).count();
             long unresolved = findings.stream().filter(Finding::isUnresolved).count();
-            long total      = findings.size();
-
-            out.printf("marshal scan — %d dependencies%n", total);
-            if (unresolved > 0) {
+            out.printf("marshal scan — %d dependencies%n", findings.size());
+            if (unresolved > 0)
                 out.printf("  %d could not be fully resolved — manual review recommended%n", unresolved);
-            }
-
             findings.stream()
                 .filter(f -> !f.isUnresolved() && f.riskLevel() != Severity.GREEN)
                 .sorted(Comparator.comparingInt(Finding::riskScore).reversed())
                 .forEach(f -> {
                     String from = f.fromVersion() != null ? f.fromVersion() + " → " : "";
                     out.printf("  [%s %d/100] %s %s%s%n",
-                        f.riskLevel(), f.riskScore(),
-                        f.coordinates().toGa(), from, f.toVersion());
-                    f.signals().forEach(s ->
-                        out.printf("    • %s (%d pts): %s%n",
-                            s.severity(), s.scoreContribution(), s.evidence()));
+                        f.riskLevel(), f.riskScore(), f.coordinates().toGa(), from, f.toVersion());
                 });
-
-            out.printf("Summary: %d flagged of %d dependencies%n", flagged, total - unresolved);
+            out.printf("Summary: %d flagged%n", flagged);
         }
     }
 }
