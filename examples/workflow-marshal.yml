@@ -1,0 +1,65 @@
+# Marshal Dependency Security — GitHub Actions workflow
+#
+# Add this file to your repository at:
+#   .github/workflows/marshal.yml
+#
+# What it does:
+#   • Runs on every PR that touches pom.xml
+#   • Diffs the dependency graph between the PR branch and its base
+#   • Posts (or updates in place) a risk summary comment on the PR
+#   • Fails CI on RED findings (configurable via `threshold` and `fail-on`)
+#   • Optionally sends a Slack alert on RED findings
+#
+# Prerequisites:
+#   • actions/checkout with fetch-depth: 0 (needed so marshal can read the base POM)
+#   • GITHUB_TOKEN permissions: pull-requests: write
+
+name: Marshal Security Scan
+
+on:
+  pull_request:
+    paths:
+      - '**/pom.xml'
+      - '**/build.gradle'
+      - '**/build.gradle.kts'
+
+permissions:
+  pull-requests: write   # required: post/update the PR comment
+  contents: read         # required: checkout code
+
+jobs:
+  marshal:
+    name: Dependency security scan
+    runs-on: ubuntu-latest
+
+    steps:
+      # Full checkout so marshal diff can read the base-branch POM via GitHub API
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Run marshal diff and post the result as a PR comment
+      - name: Marshal scan
+        uses: marshal-security/marshal-action@v1
+        with:
+          # Path to your POM file, relative to the repository root
+          pom-path: pom.xml
+
+          # Minimum risk level that fails CI.
+          # Options: green | yellow | orange | red (default: red)
+          threshold: red
+
+          # Post a risk summary comment on the PR.
+          # Set to 'false' to skip the comment (e.g. in fork PRs without write access).
+          comment-on-pr: 'true'
+
+          # Exit code behavior when threshold is breached.
+          # Options: fail | warn | never (default: fail)
+          fail-on: fail
+
+          # Slack webhook URL for RED alerts (optional).
+          # Store the URL as a repository secret.
+          # slack-webhook: ${{ secrets.MARSHAL_SLACK_WEBHOOK }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
