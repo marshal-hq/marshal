@@ -6,7 +6,7 @@ RUN apk add --no-cache bash curl git jq
 # Fat-jar built by :marshal-cli:shadowJar.
 # CI copies it here before building the image:
 #   cp marshal-cli/build/libs/marshal-cli-*.jar marshal-action/
-COPY marshal-cli-*.jar /opt/marshal/marshal.jar
+COPY marshal-cli.jar /opt/marshal/marshal.jar
 
 # Thin wrapper so entrypoint can call `marshal` like a native binary
 RUN printf '#!/bin/sh\nexec java -jar /opt/marshal/marshal.jar "$@"\n' \

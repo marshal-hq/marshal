@@ -21,6 +21,10 @@ HEAD_POM="${WORKSPACE}/${POM_PATH}"
 BASE_POM="/tmp/marshal-base-pom.xml"
 REPORT_FILE="/tmp/marshal-report.md"
 
+# ── Picocli enums are case-sensitive — uppercase the user-facing inputs ────────
+THRESHOLD_UPPER="$(echo "${THRESHOLD}" | tr '[:lower:]' '[:upper:]')"
+FAIL_ON_UPPER="$(echo "${FAIL_ON}" | tr '[:lower:]' '[:upper:]')"
+
 # ── parse PR event ─────────────────────────────────────────────────────────────
 PR_NUMBER=$(jq -r '.pull_request.number // .number // empty' "${EVENT_PATH}" 2>/dev/null || echo "")
 BASE_SHA=$(jq -r '.pull_request.base.sha // empty' "${EVENT_PATH}" 2>/dev/null || echo "")
@@ -44,15 +48,15 @@ else
 fi
 
 # ── run marshal diff twice (cache makes the second call free) ─────────────────
-# Call 1: produce the markdown report with --fail-on never so we always
+# Call 1: produce the markdown report with --fail-on NEVER so we always
 #         reach the comment + alert steps below regardless of findings.
 set +e
 marshal diff \
   --base    "${BASE_POM}" \
   --head    "${HEAD_POM}" \
-  --output  md \
-  --threshold "${THRESHOLD}" \
-  --fail-on   never \
+  --output  MD \
+  --threshold "${THRESHOLD_UPPER}" \
+  --fail-on   NEVER \
   > "${REPORT_FILE}"
 REPORT_EXIT=$?
 
@@ -61,9 +65,9 @@ REPORT_EXIT=$?
 marshal diff \
   --base    "${BASE_POM}" \
   --head    "${HEAD_POM}" \
-  --output  json \
-  --threshold "${THRESHOLD}" \
-  --fail-on   "${FAIL_ON}" \
+  --output  JSON \
+  --threshold "${THRESHOLD_UPPER}" \
+  --fail-on   "${FAIL_ON_UPPER}" \
   > /dev/null
 MARSHAL_EXIT=$?
 set -e
