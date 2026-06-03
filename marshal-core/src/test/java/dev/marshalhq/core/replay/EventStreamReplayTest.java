@@ -23,7 +23,7 @@ public class EventStreamReplayTest {
 
         VersionMetadata previous = new VersionMetadata(
             new Coordinates("com.example", "event-stream", "3.3.4"),
-            "dominictarr@example.com", "AABBCC", true,
+            "dominictarr@example.com", "AABBCC", SignatureStatus.PRESENT,
             List.of(), 3, "https://github.com/dominictarr/event-stream",
             Instant.now().minusSeconds(86400 * 30), false
         );
@@ -32,7 +32,7 @@ public class EventStreamReplayTest {
         VersionMetadata current = new VersionMetadata(
             coords,
             "right9ctrl@malicious.com",  // new maintainer
-            null, false,                 // unsigned — attacker had no original signing key
+            null, SignatureStatus.ABSENT, // unsigned — attacker had no original signing key
             List.of(), 12,               // dependency explosion: 3 → 12
             "https://github.com/dominictarr/event-stream",
             Instant.now(), false

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Diff fixture — BASE (before the PR).
+
+  Used with:
+    marshal diff --base examples/diff-base.pom.xml --head examples/diff-head.pom.xml
+
+  This represents the dependency state on the main branch before a Dependabot
+  or Renovate PR bumps versions. Compare with diff-head.pom.xml to see findings.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>dev.marshalhq.examples</groupId>
+  <artifactId>diff-fixture</artifactId>
+  <version>1.0.0</version>
+
+  <dependencies>
+
+    <!-- Version bump in head: minor (3.13.0 → 3.14.0) — likely GREEN -->
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
+      <version>3.13.0</version>
+    </dependency>
+
+    <!-- Version bump in head: major (4.x → 5.x) — likely YELLOW/ORANGE (MAJOR_JUMP) -->
+    <dependency>
+      <groupId>org.apache.httpcomponents</groupId>
+      <artifactId>httpclient</artifactId>
+      <version>4.5.14</version>
+    </dependency>
+
+    <!-- Unchanged in head — no finding emitted -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.17.0</version>
+    </dependency>
+
+    <!-- Removed in head — no finding (removal is not a new risk) -->
+    <dependency>
+      <groupId>commons-codec</groupId>
+      <artifactId>commons-codec</artifactId>
+      <version>1.16.1</version>
+    </dependency>
+
+  </dependencies>
+</project>

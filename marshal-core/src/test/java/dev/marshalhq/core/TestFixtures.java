@@ -6,11 +6,15 @@ import java.util.List;
 public class TestFixtures {
 
     public static VersionMetadata metadata(String version, boolean hasSig, String email) {
+        return metadata(version, hasSig ? SignatureStatus.PRESENT : SignatureStatus.ABSENT, email);
+    }
+
+    public static VersionMetadata metadata(String version, SignatureStatus sigStatus, String email) {
         return new VersionMetadata(
             new Coordinates("com.example", "test-artifact", version),
             email,
             null,
-            hasSig,
+            sigStatus,
             List.of(),
             5,
             "https://github.com/example/test",
@@ -21,11 +25,17 @@ public class TestFixtures {
 
     public static VersionMetadata metadata(String version, boolean hasSig, String email,
                                            int depCount, String repoUrl, boolean yanked) {
+        return metadata(version, hasSig ? SignatureStatus.PRESENT : SignatureStatus.ABSENT,
+                        email, depCount, repoUrl, yanked);
+    }
+
+    public static VersionMetadata metadata(String version, SignatureStatus sigStatus, String email,
+                                           int depCount, String repoUrl, boolean yanked) {
         return new VersionMetadata(
             new Coordinates("com.example", "test-artifact", version),
             email,
             null,
-            hasSig,
+            sigStatus,
             List.of(),
             depCount,
             repoUrl,
@@ -40,7 +50,7 @@ public class TestFixtures {
             new Coordinates("com.example", "test-artifact", version),
             email,
             fingerprint,
-            hasSig,
+            hasSig ? SignatureStatus.PRESENT : SignatureStatus.ABSENT,
             List.of(),
             5,
             "https://github.com/example/test",

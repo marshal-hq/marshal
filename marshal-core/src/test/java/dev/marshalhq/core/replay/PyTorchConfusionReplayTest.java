@@ -28,7 +28,7 @@ public class PyTorchConfusionReplayTest {
         VersionMetadata current = new VersionMetadata(
             coords,
             "attacker@protonmail.com",
-            null, false,
+            null, SignatureStatus.ABSENT,
             List.of(), 15,
             null,   // no repo URL
             Instant.now(), true  // yanked after registry takedown

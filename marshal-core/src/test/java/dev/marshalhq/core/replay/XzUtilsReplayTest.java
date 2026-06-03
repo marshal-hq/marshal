@@ -24,7 +24,7 @@ public class XzUtilsReplayTest {
 
         VersionMetadata previous = new VersionMetadata(
             new Coordinates("org.tukaani", "xz", "5.4.5"),
-            "lasse.collin@example.com", "LEGITKEY", true,
+            "lasse.collin@example.com", "LEGITKEY", SignatureStatus.PRESENT,
             List.of(), 4,
             "https://github.com/tukaani-project/xz",
             Instant.now().minusSeconds(86400 * 180), false
@@ -34,7 +34,7 @@ public class XzUtilsReplayTest {
         VersionMetadata current = new VersionMetadata(
             coords,
             "jia.tan@example.com",    // new maintainer
-            "NEWKEY", true,
+            "NEWKEY", SignatureStatus.PRESENT,
             List.of(), 4,
             "https://github.com/tukaani-project/xz",
             Instant.now(), false
