@@ -1,6 +1,7 @@
 package dev.marshalhq.cli;
 
 import dev.marshalhq.core.*;
+
 import org.junit.jupiter.api.Test;
 
 import java.io.PrintWriter;
@@ -17,7 +18,7 @@ class TerminalReporterTest {
     // ── fixtures ────────────────────────────────────────────────────────────────
 
     private static Finding finding(String ga, String from, String to,
-                                   int score, Severity level) {
+            int score, Severity level) {
         String[] parts = ga.split(":");
         Coordinates coords = new Coordinates(parts[0], parts[1], to);
         return new Finding(coords, from, to, score, level, List.of(), false, false);
@@ -95,14 +96,14 @@ class TerminalReporterTest {
 
     @Test
     void mixedSeverity_findingsOrderedByScoreDescending() {
-        Finding red    = finding("com.example:a", "1.0", "2.0", 87, Severity.RED);
+        Finding red = finding("com.example:a", "1.0", "2.0", 87, Severity.RED);
         Finding orange = finding("com.example:b", "2.0", "3.0", 62, Severity.ORANGE);
         Finding yellow = finding("com.example:c", "0.1", "0.2", 34, Severity.YELLOW);
-        Finding green  = finding("com.example:d", "3.0", "3.1",  4, Severity.GREEN);
+        Finding green = finding("com.example:d", "3.0", "3.1", 4, Severity.GREEN);
 
         String out = render(List.of(green, yellow, orange, red)); // intentionally mixed order
 
-        int posRed    = out.indexOf("● RED");
+        int posRed = out.indexOf("● RED");
         int posOrange = out.indexOf("● ORANGE");
         int posYellow = out.indexOf("● YELLOW");
         assertThat(posRed).isLessThan(posOrange).isLessThan(posYellow);
@@ -110,8 +111,8 @@ class TerminalReporterTest {
 
     @Test
     void summaryLineContainsTotalAndFlaggedCount() {
-        Finding red   = finding("com.example:a", null, "1.0.0", 87, Severity.RED);
-        Finding green = finding("com.example:b", null, "1.0.0",  4, Severity.GREEN);
+        Finding red = finding("com.example:a", null, "1.0.0", 87, Severity.RED);
+        Finding green = finding("com.example:b", null, "1.0.0", 4, Severity.GREEN);
 
         String out = render(List.of(red, green));
 
@@ -128,14 +129,14 @@ class TerminalReporterTest {
         assertThat(out).contains("● RED");
         // The finding row itself must not contain → (no fromVersion); the header has → but not the row
         assertThat(out.lines()
-            .filter(l -> l.contains("● RED"))
-            .noneMatch(l -> l.contains("→")))
-            .isTrue();
+                .filter(l -> l.contains("● RED"))
+                .noneMatch(l -> l.contains("→")))
+                .isTrue();
     }
 
     @Test
     void unresolvedDeps_renderedInOwnSection_notCountedAsFlagged() {
-        Finding red  = finding("com.example:a", "1.0", "2.0", 87, Severity.RED);
+        Finding red = finding("com.example:a", "1.0", "2.0", 87, Severity.RED);
         Finding unres = unresolved("com.example:b");
 
         String out = render(List.of(red, unres));
@@ -148,7 +149,7 @@ class TerminalReporterTest {
 
     @Test
     void unknownMetadata_surfacesIncompleteMetadataNotice() {
-        Finding green   = finding("com.example:a", null, "1.0", 0, Severity.GREEN);
+        Finding green = finding("com.example:a", null, "1.0", 0, Severity.GREEN);
         Finding unknown = findingWithUnknown("com.example:b", "2.0");
 
         String out = render(List.of(green, unknown));
@@ -171,8 +172,8 @@ class TerminalReporterTest {
         String out = render(List.of());
         // At least one line of ─ chars that reaches full width
         assertThat(out.lines()
-            .anyMatch(l -> l.chars().allMatch(c -> c == '─') && l.length() == WIDTH))
-            .isTrue();
+                .anyMatch(l -> l.chars().allMatch(c -> c == '─') && l.length() == WIDTH))
+                .isTrue();
     }
 
     @Test
@@ -182,8 +183,8 @@ class TerminalReporterTest {
 
         // The line containing the badge must also contain the score
         assertThat(out.lines()
-            .filter(l -> l.contains("● RED"))
-            .anyMatch(l -> l.contains("87/100")))
-            .isTrue();
+                .filter(l -> l.contains("● RED"))
+                .anyMatch(l -> l.contains("87/100")))
+                .isTrue();
     }
 }

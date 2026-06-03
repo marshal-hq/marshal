@@ -3,6 +3,7 @@ package dev.marshalhq.cli;
 import dev.marshalhq.core.*;
 import dev.marshalhq.registry.MavenCentralClient;
 import dev.marshalhq.resolvers.PomDependencyResolver;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -10,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+
 import picocli.CommandLine;
 
 import java.io.IOException;
@@ -26,31 +28,34 @@ import static org.mockito.Mockito.*;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class ScanCommandTest {
 
-    @Mock MavenCentralClient mockClient;
-    @Mock PomDependencyResolver mockResolver;
+    @Mock
+    MavenCentralClient mockClient;
+    @Mock
+    PomDependencyResolver mockResolver;
 
-    @TempDir Path tempDir;
+    @TempDir
+    Path tempDir;
 
     // --- fixtures ---
 
     private static final Coordinates LIB_A =
-        new Coordinates("com.example", "lib-a", "2.0.0");
+            new Coordinates("com.example", "lib-a", "2.0.0");
     private static final Coordinates LIB_A_PREV =
-        new Coordinates("com.example", "lib-a", "1.0.0");
+            new Coordinates("com.example", "lib-a", "1.0.0");
 
     private static VersionMetadata signedMeta(Coordinates c) {
         return new VersionMetadata(c, null, "AABBCCDD", SignatureStatus.PRESENT,
-            List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
+                List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
     }
 
     private static VersionMetadata unsignedMeta(Coordinates c) {
         return new VersionMetadata(c, null, null, SignatureStatus.ABSENT,
-            List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
+                List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
     }
 
     private static VersionMetadata unknownMeta(Coordinates c) {
         return new VersionMetadata(c, null, null, SignatureStatus.UNKNOWN,
-            List.of(), -1, null, Instant.EPOCH, false);
+                List.of(), -1, null, Instant.EPOCH, false);
     }
 
     // --- helpers ---
@@ -73,7 +78,7 @@ class ScanCommandTest {
     void pipelineProducesFindingForEachResolvedDep() throws Exception {
         when(mockResolver.resolve(any())).thenReturn(List.of(LIB_A));
         when(mockClient.getVersionHistory("com.example", "lib-a"))
-            .thenReturn(List.of("2.0.0", "1.0.0"));
+                .thenReturn(List.of("2.0.0", "1.0.0"));
         when(mockClient.fetchMetadata(LIB_A)).thenReturn(signedMeta(LIB_A));
         when(mockClient.fetchMetadata(LIB_A_PREV)).thenReturn(signedMeta(LIB_A_PREV));
 
@@ -90,7 +95,7 @@ class ScanCommandTest {
     void firstSeenDep_noPreviousVersion_doesNotNPE() throws Exception {
         when(mockResolver.resolve(any())).thenReturn(List.of(LIB_A));
         when(mockClient.getVersionHistory("com.example", "lib-a"))
-            .thenReturn(List.of("2.0.0")); // only one version — no previous
+                .thenReturn(List.of("2.0.0")); // only one version — no previous
         when(mockClient.fetchMetadata(LIB_A)).thenReturn(unsignedMeta(LIB_A));
 
         ScanCommand cmd = new ScanCommand(mockClient, mockResolver);
@@ -115,7 +120,7 @@ class ScanCommandTest {
     void unknownSignatureStatus_doesNotProduceFalseYellow() throws Exception {
         when(mockResolver.resolve(any())).thenReturn(List.of(LIB_A));
         when(mockClient.getVersionHistory("com.example", "lib-a"))
-            .thenReturn(List.of("2.0.0"));
+                .thenReturn(List.of("2.0.0"));
         when(mockClient.fetchMetadata(LIB_A)).thenReturn(unknownMeta(LIB_A));
 
         ScanCommand cmd = new ScanCommand(mockClient, mockResolver);
@@ -134,12 +139,12 @@ class ScanCommandTest {
         Coordinates prevA = new Coordinates("com.example", "lib-a", "1.0.0");
         when(mockResolver.resolve(any())).thenReturn(List.of(LIB_A));
         when(mockClient.getVersionHistory("com.example", "lib-a"))
-            .thenReturn(List.of("2.0.0", "1.0.0"));
+                .thenReturn(List.of("2.0.0", "1.0.0"));
         // current: different key from previous → NEW_MAINTAINER(35) + MISSING_SIG(15) + SIG_DROPPED(40) = 90 → RED
         VersionMetadata cur = new VersionMetadata(LIB_A, "new@example.com", null, SignatureStatus.ABSENT,
-            List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
+                List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
         VersionMetadata prev = new VersionMetadata(prevA, "old@example.com", "LEGIT", SignatureStatus.PRESENT,
-            List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
+                List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
         when(mockClient.fetchMetadata(LIB_A)).thenReturn(cur);
         when(mockClient.fetchMetadata(prevA)).thenReturn(prev);
     }
@@ -148,8 +153,8 @@ class ScanCommandTest {
     void failOnFail_redFinding_redThreshold_exits1() {
         setupRedFinding();
         int exit = run(new ScanCommand(mockClient, mockResolver),
-            "--pom", tempDir.resolve("pom.xml").toString(),
-            "--threshold", "RED", "--fail-on", "FAIL");
+                "--pom", tempDir.resolve("pom.xml").toString(),
+                "--threshold", "RED", "--fail-on", "FAIL");
         assertThat(exit).isEqualTo(1);
     }
 
@@ -157,8 +162,8 @@ class ScanCommandTest {
     void failOnWarn_redFinding_redThreshold_exits0() {
         setupRedFinding();
         int exit = run(new ScanCommand(mockClient, mockResolver),
-            "--pom", tempDir.resolve("pom.xml").toString(),
-            "--threshold", "RED", "--fail-on", "WARN");
+                "--pom", tempDir.resolve("pom.xml").toString(),
+                "--threshold", "RED", "--fail-on", "WARN");
         assertThat(exit).isEqualTo(0);
     }
 
@@ -166,8 +171,8 @@ class ScanCommandTest {
     void failOnNever_redFinding_redThreshold_exits0() {
         setupRedFinding();
         int exit = run(new ScanCommand(mockClient, mockResolver),
-            "--pom", tempDir.resolve("pom.xml").toString(),
-            "--threshold", "RED", "--fail-on", "NEVER");
+                "--pom", tempDir.resolve("pom.xml").toString(),
+                "--threshold", "RED", "--fail-on", "NEVER");
         assertThat(exit).isEqualTo(0);
     }
 
@@ -175,19 +180,19 @@ class ScanCommandTest {
     void belowThreshold_doesNotFail() {
         // DEP_EXPLOSION (25 pts) → YELLOW; threshold=RED → no failure
         VersionMetadata cur = new VersionMetadata(LIB_A, null, "AABB", SignatureStatus.PRESENT,
-            List.of(), 16, "https://github.com/example/lib", Instant.EPOCH, false);
+                List.of(), 16, "https://github.com/example/lib", Instant.EPOCH, false);
         VersionMetadata prev = new VersionMetadata(LIB_A_PREV, null, "AABB", SignatureStatus.PRESENT,
-            List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
+                List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
 
         when(mockResolver.resolve(any())).thenReturn(List.of(LIB_A));
         when(mockClient.getVersionHistory("com.example", "lib-a"))
-            .thenReturn(List.of("2.0.0", "1.0.0"));
+                .thenReturn(List.of("2.0.0", "1.0.0"));
         when(mockClient.fetchMetadata(LIB_A)).thenReturn(cur);
         when(mockClient.fetchMetadata(LIB_A_PREV)).thenReturn(prev);
 
         int exit = run(new ScanCommand(mockClient, mockResolver),
-            "--pom", tempDir.resolve("pom.xml").toString(),
-            "--threshold", "RED", "--fail-on", "FAIL");
+                "--pom", tempDir.resolve("pom.xml").toString(),
+                "--threshold", "RED", "--fail-on", "FAIL");
         assertThat(exit).isEqualTo(0); // YELLOW < RED threshold → no failure
     }
 
@@ -195,19 +200,19 @@ class ScanCommandTest {
     void thresholdYellow_yellowFinding_failOnFail_exits1() {
         // DEP_EXPLOSION fires (16 > 5*3=15) → score 25 → YELLOW (25 >= 21)
         VersionMetadata cur = new VersionMetadata(LIB_A, null, "AABB", SignatureStatus.PRESENT,
-            List.of(), 16, "https://github.com/example/lib", Instant.EPOCH, false);
+                List.of(), 16, "https://github.com/example/lib", Instant.EPOCH, false);
         VersionMetadata prev = new VersionMetadata(LIB_A_PREV, null, "AABB", SignatureStatus.PRESENT,
-            List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
+                List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
 
         when(mockResolver.resolve(any())).thenReturn(List.of(LIB_A));
         when(mockClient.getVersionHistory("com.example", "lib-a"))
-            .thenReturn(List.of("2.0.0", "1.0.0"));
+                .thenReturn(List.of("2.0.0", "1.0.0"));
         when(mockClient.fetchMetadata(LIB_A)).thenReturn(cur);
         when(mockClient.fetchMetadata(LIB_A_PREV)).thenReturn(prev);
 
         int exit = run(new ScanCommand(mockClient, mockResolver),
-            "--pom", tempDir.resolve("pom.xml").toString(),
-            "--threshold", "YELLOW", "--fail-on", "FAIL");
+                "--pom", tempDir.resolve("pom.xml").toString(),
+                "--threshold", "YELLOW", "--fail-on", "FAIL");
         assertThat(exit).isEqualTo(1); // YELLOW >= YELLOW threshold → fail
     }
 
@@ -215,7 +220,7 @@ class ScanCommandTest {
     void noDependencies_exits0() {
         when(mockResolver.resolve(any())).thenReturn(List.of());
         int exit = run(new ScanCommand(mockClient, mockResolver),
-            "--pom", tempDir.resolve("pom.xml").toString());
+                "--pom", tempDir.resolve("pom.xml").toString());
         assertThat(exit).isEqualTo(0);
     }
 
@@ -231,16 +236,17 @@ class ScanCommandTest {
         System.setErr(new java.io.PrintStream(errBytes));
         try {
             int exit = run(new ScanCommand(mockClient, mockResolver),
-                "--pom", tempDir.resolve("pom.xml").toString(),
-                "--output", "MD",
-                "--threshold", "RED",
-                "--fail-on", "WARN");
+                    "--pom", tempDir.resolve("pom.xml").toString(),
+                    "--output", "MD",
+                    "--threshold", "RED",
+                    "--fail-on", "WARN");
             assertThat(exit).isEqualTo(0);
             // Markdown on stdout must not contain the warning line
             assertThat(outBytes.toString()).doesNotContain("[WARN] marshal:");
             // Warning must appear on stderr
             assertThat(errBytes.toString()).contains("[WARN] marshal:");
-        } finally {
+        }
+        finally {
             System.setOut(origOut);
             System.setErr(origErr);
         }

@@ -11,6 +11,11 @@ class NewMaintainerRuleTest {
     private final NewMaintainerRule rule = new NewMaintainerRule();
 
     @Test
+    void id_isCorrect() {
+        assertThat(rule.id()).isEqualTo("NEW-MAINTAINER");
+    }
+
+    @Test
     void firesWhenEmailChanges() {
         VersionMetadata current = TestFixtures.metadata("2.0.0", true, "eve@attacker.com");
         VersionMetadata previous = TestFixtures.metadata("1.0.0", true, "alice@example.com");

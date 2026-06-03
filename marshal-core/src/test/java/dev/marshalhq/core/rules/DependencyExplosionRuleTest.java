@@ -11,12 +11,19 @@ class DependencyExplosionRuleTest {
     private final DependencyExplosionRule rule = new DependencyExplosionRule();
 
     @Test
+    void id_isCorrect() {
+        assertThat(rule.id()).isEqualTo("DEP-EXPLOSION");
+    }
+
+    @Test
     void firesWhenDepCountGrowsMoreThanThreeTimes() {
         VersionMetadata current = TestFixtures.metadata("2.0.0", true, "alice@example.com", 16, "https://github.com/example/test", false);
         VersionMetadata previous = TestFixtures.metadata("1.0.0", true, "alice@example.com", 5, "https://github.com/example/test", false);
         RuleResult result = rule.evaluate(TestFixtures.ctx(current, previous));
         assertThat(result.scoreContribution()).isEqualTo(25);
         assertThat(result.severity()).isEqualTo(Severity.ORANGE);
+        // evidence must show the actual ratio (16/5 = 3.2x), not an arithmetic mutation artifact
+        assertThat(result.evidence()).contains("3.2x increase");
     }
 
     @Test

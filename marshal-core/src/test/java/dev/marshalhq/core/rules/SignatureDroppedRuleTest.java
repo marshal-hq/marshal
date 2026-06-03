@@ -14,6 +14,11 @@ class SignatureDroppedRuleTest {
     private final SignatureDroppedRule rule = new SignatureDroppedRule();
 
     @Test
+    void id_isCorrect() {
+        assertThat(rule.id()).isEqualTo("SIG-DROPPED");
+    }
+
+    @Test
     void firesWhenPreviousWasSignedAndCurrentIsNot() {
         VersionMetadata current = TestFixtures.metadata("2.0.0", false, "alice@example.com");
         VersionMetadata previous = TestFixtures.metadata("1.0.0", true, "alice@example.com");

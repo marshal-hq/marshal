@@ -12,6 +12,11 @@ class MajorVersionJumpRuleTest {
     private final MajorVersionJumpRule rule = new MajorVersionJumpRule();
 
     @Test
+    void id_isCorrect() {
+        assertThat(rule.id()).isEqualTo("MAJOR-JUMP");
+    }
+
+    @Test
     void firesOnJumpGreaterThanTwoMajorVersions() {
         VersionMetadata current = TestFixtures.metadata("5.0.0", true, "alice@example.com");
         VersionMetadata previous = TestFixtures.metadata("1.0.0", true, "alice@example.com");

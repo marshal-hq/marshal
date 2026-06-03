@@ -1,3 +1,3 @@
 package dev.marshalhq.cli;
 
-public enum OutputFormat { HUMAN, JSON, MD }
+public enum OutputFormat {HUMAN, JSON, MD}

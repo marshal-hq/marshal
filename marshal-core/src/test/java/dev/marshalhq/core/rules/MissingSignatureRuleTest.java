@@ -12,6 +12,11 @@ class MissingSignatureRuleTest {
     private final MissingSignatureRule rule = new MissingSignatureRule();
 
     @Test
+    void id_isCorrect() {
+        assertThat(rule.id()).isEqualTo("MISSING-SIG");
+    }
+
+    @Test
     void firesWhenCurrentVersionHasNoGpgSignature() {
         VersionMetadata current = TestFixtures.metadata("2.0.0", false, "alice@example.com");
         RuleResult result = rule.evaluate(TestFixtures.ctx(current, null));

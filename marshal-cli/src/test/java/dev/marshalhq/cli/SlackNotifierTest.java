@@ -1,6 +1,7 @@
 package dev.marshalhq.cli;
 
 import dev.marshalhq.core.*;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -23,7 +24,8 @@ import static org.mockito.Mockito.*;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class SlackNotifierTest {
 
-    @Mock HttpClient mockHttp;
+    @Mock
+    HttpClient mockHttp;
 
     private static final String WEBHOOK = "https://hooks.slack.com/services/TEST";
 

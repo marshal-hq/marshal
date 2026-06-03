@@ -11,6 +11,11 @@ class YankedVersionRuleTest {
     private final YankedVersionRule rule = new YankedVersionRule();
 
     @Test
+    void id_isCorrect() {
+        assertThat(rule.id()).isEqualTo("YANKED");
+    }
+
+    @Test
     void firesWhenCurrentVersionIsYanked() {
         VersionMetadata current = TestFixtures.metadata("1.0.0", true, "alice@example.com", 5, "https://github.com/example/test", true);
         RuleResult result = rule.evaluate(TestFixtures.ctx(current, null));

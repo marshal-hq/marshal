@@ -3,6 +3,7 @@ package dev.marshalhq.cli;
 import dev.marshalhq.core.*;
 import dev.marshalhq.registry.MavenCentralClient;
 import dev.marshalhq.resolvers.PomDependencyResolver;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
@@ -10,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+
 import picocli.CommandLine;
 
 import java.nio.file.Path;
@@ -24,10 +26,13 @@ import static org.mockito.Mockito.*;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class DiffCommandTest {
 
-    @Mock MavenCentralClient mockClient;
-    @Mock PomDependencyResolver mockResolver;
+    @Mock
+    MavenCentralClient mockClient;
+    @Mock
+    PomDependencyResolver mockResolver;
 
-    @TempDir Path tempDir;
+    @TempDir
+    Path tempDir;
 
     // ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -36,12 +41,12 @@ class DiffCommandTest {
 
     private static VersionMetadata signed(Coordinates c) {
         return new VersionMetadata(c, null, "AABB", SignatureStatus.PRESENT,
-            List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
+                List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
     }
 
     private static VersionMetadata absent(Coordinates c) {
         return new VersionMetadata(c, null, null, SignatureStatus.ABSENT,
-            List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
+                List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
     }
 
     private int run(List<Coordinates> baseDeps, List<Coordinates> headDeps) {
@@ -49,9 +54,9 @@ class DiffCommandTest {
         when(mockResolver.resolve(tempDir.resolve("head.xml"))).thenReturn(headDeps);
         DiffCommand cmd = new DiffCommand(mockClient, mockResolver);
         return new CommandLine(cmd).execute(
-            "--base", tempDir.resolve("base.xml").toString(),
-            "--head", tempDir.resolve("head.xml").toString(),
-            "--output", "HUMAN"
+                "--base", tempDir.resolve("base.xml").toString(),
+                "--head", tempDir.resolve("head.xml").toString(),
+                "--output", "HUMAN"
         );
     }
 
@@ -105,9 +110,9 @@ class DiffCommandTest {
         DiffCommand cmd = new DiffCommand(mockClient, mockResolver);
         // Just check it runs without NPE — fromVersion wiring verified by absence of crash
         int exit = new CommandLine(cmd).execute(
-            "--base", tempDir.resolve("base.xml").toString(),
-            "--head", tempDir.resolve("head.xml").toString(),
-            "--output", "HUMAN"
+                "--base", tempDir.resolve("base.xml").toString(),
+                "--head", tempDir.resolve("head.xml").toString(),
+                "--output", "HUMAN"
         );
         assertThat(exit).isEqualTo(0);
     }
@@ -142,9 +147,9 @@ class DiffCommandTest {
     void redFinding_failOnFail_exits1() {
         // NEW_MAINTAINER(35) + SIG_DROPPED(40) + MISSING_SIG(15) = 90 → RED
         VersionMetadata cur = new VersionMetadata(LIB_V2, "new@example.com", null,
-            SignatureStatus.ABSENT, List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
+                SignatureStatus.ABSENT, List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
         VersionMetadata prev = new VersionMetadata(LIB_V1, "old@example.com", "LEGIT",
-            SignatureStatus.PRESENT, List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
+                SignatureStatus.PRESENT, List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
         when(mockClient.fetchMetadata(LIB_V2)).thenReturn(cur);
         when(mockClient.fetchMetadata(LIB_V1)).thenReturn(prev);
 
@@ -152,9 +157,9 @@ class DiffCommandTest {
         when(mockResolver.resolve(tempDir.resolve("head.xml"))).thenReturn(List.of(LIB_V2));
         DiffCommand cmd = new DiffCommand(mockClient, mockResolver);
         int exit = new CommandLine(cmd).execute(
-            "--base", tempDir.resolve("base.xml").toString(),
-            "--head", tempDir.resolve("head.xml").toString(),
-            "--output", "HUMAN", "--threshold", "RED", "--fail-on", "FAIL"
+                "--base", tempDir.resolve("base.xml").toString(),
+                "--head", tempDir.resolve("head.xml").toString(),
+                "--output", "HUMAN", "--threshold", "RED", "--fail-on", "FAIL"
         );
         assertThat(exit).isEqualTo(1);
     }
@@ -162,9 +167,9 @@ class DiffCommandTest {
     @Test
     void redFinding_failOnNever_exits0() {
         VersionMetadata cur = new VersionMetadata(LIB_V2, "new@example.com", null,
-            SignatureStatus.ABSENT, List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
+                SignatureStatus.ABSENT, List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
         VersionMetadata prev = new VersionMetadata(LIB_V1, "old@example.com", "LEGIT",
-            SignatureStatus.PRESENT, List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
+                SignatureStatus.PRESENT, List.of(), 5, "https://github.com/example/lib", Instant.EPOCH, false);
         when(mockClient.fetchMetadata(LIB_V2)).thenReturn(cur);
         when(mockClient.fetchMetadata(LIB_V1)).thenReturn(prev);
 
@@ -172,9 +177,9 @@ class DiffCommandTest {
         when(mockResolver.resolve(tempDir.resolve("head.xml"))).thenReturn(List.of(LIB_V2));
         DiffCommand cmd = new DiffCommand(mockClient, mockResolver);
         int exit = new CommandLine(cmd).execute(
-            "--base", tempDir.resolve("base.xml").toString(),
-            "--head", tempDir.resolve("head.xml").toString(),
-            "--output", "HUMAN", "--threshold", "RED", "--fail-on", "NEVER"
+                "--base", tempDir.resolve("base.xml").toString(),
+                "--head", tempDir.resolve("head.xml").toString(),
+                "--output", "HUMAN", "--threshold", "RED", "--fail-on", "NEVER"
         );
         assertThat(exit).isEqualTo(0);
     }

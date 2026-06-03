@@ -2,7 +2,9 @@ package dev.marshalhq.cli;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import dev.marshalhq.core.*;
+
 import org.junit.jupiter.api.Test;
 
 import java.io.PrintWriter;
@@ -16,17 +18,17 @@ class JsonReporterTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Instant FIXED_AT = Instant.parse("2026-06-01T10:00:00Z");
-    private static final String PROJECT    = "./pom.xml";
+    private static final String PROJECT = "./pom.xml";
 
     private final JsonReporter reporter = new JsonReporter(PROJECT, FIXED_AT);
 
     // ── fixtures ─────────────────────────────────────────────────────────────────
 
     private static Finding finding(String ga, String from, String to,
-                                   int score, Severity level, List<RuleResult> signals) {
+            int score, Severity level, List<RuleResult> signals) {
         String[] p = ga.split(":");
         return new Finding(new Coordinates(p[0], p[1], to),
-            from, to, score, level, signals, false, false);
+                from, to, score, level, signals, false, false);
     }
 
     private static Finding green(String ga) {
@@ -87,13 +89,13 @@ class JsonReporterTest {
     void distributionCountsCorrect_mixedSeverities() throws Exception {
         RuleResult sig = new RuleResult(35, Severity.ORANGE, "evidence", "NEW-MAINTAINER");
         List<Finding> findings = List.of(
-            finding("a:b", "1.0", "2.0", 87, Severity.RED,    List.of(sig)),
-            finding("c:d", "2.0", "3.0", 62, Severity.ORANGE, List.of(sig)),
-            finding("e:f", "0.1", "0.2", 34, Severity.YELLOW, List.of(sig)),
-            finding("e:f", "0.1", "0.2", 34, Severity.YELLOW, List.of(sig)),
-            green("g:h"),
-            green("i:j"),
-            green("k:l")
+                finding("a:b", "1.0", "2.0", 87, Severity.RED, List.of(sig)),
+                finding("c:d", "2.0", "3.0", 62, Severity.ORANGE, List.of(sig)),
+                finding("e:f", "0.1", "0.2", 34, Severity.YELLOW, List.of(sig)),
+                finding("e:f", "0.1", "0.2", 34, Severity.YELLOW, List.of(sig)),
+                green("g:h"),
+                green("i:j"),
+                green("k:l")
         );
 
         JsonNode dist = render(findings).get("summary").get("risk_distribution");
@@ -107,10 +109,10 @@ class JsonReporterTest {
     void flaggedIsRedPlusOrange() throws Exception {
         RuleResult sig = new RuleResult(35, Severity.ORANGE, "ev", "NEW-MAINTAINER");
         List<Finding> findings = List.of(
-            finding("a:b", "1.0", "2.0", 87, Severity.RED,    List.of(sig)),
-            finding("c:d", "2.0", "3.0", 62, Severity.ORANGE, List.of(sig)),
-            finding("e:f", "0.1", "0.2", 34, Severity.YELLOW, List.of(sig)),
-            green("g:h")
+                finding("a:b", "1.0", "2.0", 87, Severity.RED, List.of(sig)),
+                finding("c:d", "2.0", "3.0", 62, Severity.ORANGE, List.of(sig)),
+                finding("e:f", "0.1", "0.2", 34, Severity.YELLOW, List.of(sig)),
+                green("g:h")
         );
 
         JsonNode summary = render(findings).get("summary");
@@ -122,15 +124,15 @@ class JsonReporterTest {
     void distributionSumsToTotalMinusUnresolved() throws Exception {
         RuleResult sig = new RuleResult(40, Severity.RED, "ev", "SIG-DROPPED");
         List<Finding> findings = List.of(
-            finding("a:b", "1.0", "2.0", 87, Severity.RED, List.of(sig)),
-            green("c:d"),
-            unresolved("e:f")  // must be excluded from distribution
+                finding("a:b", "1.0", "2.0", 87, Severity.RED, List.of(sig)),
+                green("c:d"),
+                unresolved("e:f")  // must be excluded from distribution
         );
 
-        JsonNode root    = render(findings);
-        JsonNode dist    = root.get("summary").get("risk_distribution");
+        JsonNode root = render(findings);
+        JsonNode dist = root.get("summary").get("risk_distribution");
         int distributionTotal = dist.get("red").asInt() + dist.get("orange").asInt()
-            + dist.get("yellow").asInt() + dist.get("green").asInt();
+                + dist.get("yellow").asInt() + dist.get("green").asInt();
 
         assertThat(root.get("summary").get("total_dependencies").asInt()).isEqualTo(3);
         assertThat(distributionTotal).isEqualTo(2); // unresolved excluded
@@ -155,7 +157,7 @@ class JsonReporterTest {
     @Test
     void riskLevelIsLowercase() throws Exception {
         RuleResult sig = new RuleResult(35, Severity.ORANGE, "ev", "NEW-MAINTAINER");
-        Finding red    = finding("a:b", "1.0", "2.0", 87, Severity.RED,    List.of(sig));
+        Finding red = finding("a:b", "1.0", "2.0", 87, Severity.RED, List.of(sig));
         Finding orange = finding("c:d", "2.0", "3.0", 62, Severity.ORANGE, List.of(sig));
         Finding yellow = finding("e:f", "0.1", "0.2", 34, Severity.YELLOW, List.of(sig));
         Finding green_ = green("g:h");
@@ -200,9 +202,9 @@ class JsonReporterTest {
     void outputIsValidJson() throws Exception {
         RuleResult sig = new RuleResult(40, Severity.RED, "dropped", "SIG-DROPPED");
         List<Finding> findings = List.of(
-            finding("a:b", "1.0", "2.0", 87, Severity.RED, List.of(sig)),
-            green("c:d"),
-            unresolved("e:f")
+                finding("a:b", "1.0", "2.0", 87, Severity.RED, List.of(sig)),
+                green("c:d"),
+                unresolved("e:f")
         );
         StringWriter sw = new StringWriter();
         reporter.report(findings, new PrintWriter(sw));

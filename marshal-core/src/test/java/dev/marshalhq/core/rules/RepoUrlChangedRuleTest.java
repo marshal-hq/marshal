@@ -11,6 +11,11 @@ class RepoUrlChangedRuleTest {
     private final RepoUrlChangedRule rule = new RepoUrlChangedRule();
 
     @Test
+    void id_isCorrect() {
+        assertThat(rule.id()).isEqualTo("REPO-CHANGED");
+    }
+
+    @Test
     void firesWhenRepoUrlChangesBetweenVersions() {
         VersionMetadata current = TestFixtures.metadata("2.0.0", true, "alice@example.com", 5, "https://github.com/new-owner/lib", false);
         VersionMetadata previous = TestFixtures.metadata("1.0.0", true, "alice@example.com", 5, "https://github.com/original/lib", false);
