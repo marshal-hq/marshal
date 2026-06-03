@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.io.PrintWriter;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
@@ -63,8 +62,7 @@ class CliHelper {
         return gas;
     }
 
-    static int computeExitCode(List<Finding> findings, Severity threshold,
-                                FailOn failOn, PrintWriter warn) {
+    static int computeExitCode(List<Finding> findings, Severity threshold, FailOn failOn) {
         Optional<Severity> worst = findings.stream()
             .filter(f -> !f.isUnresolved() && f.riskLevel() != null)
             .map(Finding::riskLevel)
@@ -75,7 +73,8 @@ class CliHelper {
         return switch (failOn) {
             case FAIL  -> 1;
             case WARN  -> {
-                warn.println("[WARN] marshal: findings at or above threshold '" +
+                // Write to stderr so machine-readable stdout (--output json/md) is not corrupted
+                System.err.println("[WARN] marshal: findings at or above threshold '" +
                     threshold.name().toLowerCase() + "' detected.");
                 yield 0;
             }

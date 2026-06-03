@@ -218,4 +218,31 @@ class ScanCommandTest {
             "--pom", tempDir.resolve("pom.xml").toString());
         assertThat(exit).isEqualTo(0);
     }
+
+    @Test
+    void failOnWarn_mdOutput_warningGoesToStderr_notStdout() {
+        setupRedFinding();
+
+        java.io.PrintStream origOut = System.out;
+        java.io.PrintStream origErr = System.err;
+        java.io.ByteArrayOutputStream outBytes = new java.io.ByteArrayOutputStream();
+        java.io.ByteArrayOutputStream errBytes = new java.io.ByteArrayOutputStream();
+        System.setOut(new java.io.PrintStream(outBytes));
+        System.setErr(new java.io.PrintStream(errBytes));
+        try {
+            int exit = run(new ScanCommand(mockClient, mockResolver),
+                "--pom", tempDir.resolve("pom.xml").toString(),
+                "--output", "MD",
+                "--threshold", "RED",
+                "--fail-on", "WARN");
+            assertThat(exit).isEqualTo(0);
+            // Markdown on stdout must not contain the warning line
+            assertThat(outBytes.toString()).doesNotContain("[WARN] marshal:");
+            // Warning must appear on stderr
+            assertThat(errBytes.toString()).contains("[WARN] marshal:");
+        } finally {
+            System.setOut(origOut);
+            System.setErr(origErr);
+        }
+    }
 }

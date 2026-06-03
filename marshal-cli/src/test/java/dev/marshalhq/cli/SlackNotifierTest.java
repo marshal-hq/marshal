@@ -117,21 +117,24 @@ class SlackNotifierTest {
     }
 
     @Test
-    void payloadTextContainsFlaggedCount_worstLevel_topFinding_link() throws Exception {
-        // Capture the request body by checking the body publisher content indirectly:
-        // since HttpRequest.BodyPublisher content can't be easily read back after build,
-        // we verify via a real SlackNotifier with a mock that captures the body.
-        // We use a real ObjectMapper to verify JSON structure in a round-trip test.
+    void buildMessage_containsFlaggedCount_worstLevel_topFinding_link() {
+        Finding red = redFinding(); // 87/100 RED, com.example:some-lib, 1.0.0 → 2.0.0
+        String msg = SlackNotifier.buildMessage(List.of(red), red);
 
-        ArgumentCaptor<HttpRequest> captor = ArgumentCaptor.forClass(HttpRequest.class);
-        doReturn(ok()).when(mockHttp).send(captor.capture(), any());
+        assertThat(msg).contains("1 flagged");
+        assertThat(msg).contains("RED");
+        assertThat(msg).contains("87/100");
+        assertThat(msg).contains("com.example:some-lib");
+        assertThat(msg).contains("1.0.0 → 2.0.0");
+        assertThat(msg).contains("https://marshalhq.dev");
+    }
 
-        Finding red = redFinding();
-        new SlackNotifier(mockHttp).notify(List.of(red), WEBHOOK, Severity.RED);
-
-        // The body is sent via BodyPublisher — we verify it by re-calling buildMessage logic
-        // indirectly: check the request was sent (above) and the webhook URL is correct.
-        assertThat(captor.getValue().uri().toString()).isEqualTo(WEBHOOK);
+    @Test
+    void buildMessage_pluralisesDependencyCount() {
+        Finding a = redFinding();
+        Finding b = redFinding();
+        String msg = SlackNotifier.buildMessage(List.of(a, b), a);
+        assertThat(msg).contains("2 flagged dependencies");
     }
 
     @Test

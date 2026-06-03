@@ -147,7 +147,7 @@ public class ScanCommand implements Callable<Integer> {
             config.getNotifications().getSlack().getMinLevel(), Severity.RED);
         new SlackNotifier().notify(findings, effectiveWebhook, slackMinLevel);
 
-        return CliHelper.computeExitCode(findings, threshold, failOn, writer);
+        return CliHelper.computeExitCode(findings, threshold, failOn);
     }
 
     // Fallback reporter used until Block 3/4 reporters were implemented — kept for completeness.

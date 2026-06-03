@@ -162,7 +162,7 @@ public class DiffCommand implements Callable<Integer> {
             config.getNotifications().getSlack().getMinLevel(), Severity.RED);
         new SlackNotifier().notify(findings, effectiveWebhook, slackMinLevel);
 
-        return CliHelper.computeExitCode(findings, threshold, failOn, writer);
+        return CliHelper.computeExitCode(findings, threshold, failOn);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────

@@ -70,7 +70,7 @@ public class SlackNotifier {
         }
     }
 
-    private static String buildMessage(List<Finding> qualifying, Finding top) {
+    static String buildMessage(List<Finding> qualifying, Finding top) {
         String from = top.fromVersion() != null ? top.fromVersion() + " → " : "";
         return String.format(
             "⚠️ Marshal: %d flagged %s detected\n" +

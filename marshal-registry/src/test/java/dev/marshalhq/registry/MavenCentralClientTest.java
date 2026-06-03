@@ -217,6 +217,84 @@ class MavenCentralClientTest {
         assertThat(keyId).isEqualTo("86FDC7E2A11262CB");
     }
 
+    // ── A2: cache must not store partial/failed results ──────────────────────────
+
+    @Test
+    void unknownSigResult_isNotCached() throws Exception {
+        MetadataCache cache = new MetadataCache("jdbc:sqlite::memory:");
+        HttpResponse<String> search = resp(200, EMPTY_SEARCH_JSON);
+        // Sig: 429 three times → UNKNOWN
+        HttpResponse<String> r1 = resp(429, "");
+        HttpResponse<String> r2 = resp(429, "");
+        HttpResponse<String> r3 = resp(429, "");
+        HttpResponse<String> pom = resp(200, MINIMAL_POM);
+
+        doReturn(search).doReturn(r1).doReturn(r2).doReturn(r3).doReturn(pom)
+            .when(mockHttp).send(any(HttpRequest.class), any());
+
+        new MavenCentralClient(mockHttp, cache).fetchMetadata(COORDS);
+
+        // UNKNOWN sig → result must NOT be in cache (would poison for 24h)
+        assertThat(cache.get(COORDS)).isNull();
+    }
+
+    @Test
+    void pomFetchFailureResult_isNotCached() throws Exception {
+        MetadataCache cache = new MetadataCache("jdbc:sqlite::memory:");
+        HttpResponse<String> search = resp(200, EMPTY_SEARCH_JSON);
+        HttpResponse<String> asc404 = resp(404, "");   // sig ABSENT (success)
+        HttpResponse<String> pom500 = resp(500, "");   // POM fails → depCount=-1
+
+        doReturn(search).doReturn(asc404).doReturn(pom500)
+            .when(mockHttp).send(any(HttpRequest.class), any());
+
+        new MavenCentralClient(mockHttp, cache).fetchMetadata(COORDS);
+
+        // depCount == -1 → result must NOT be in cache
+        assertThat(cache.get(COORDS)).isNull();
+    }
+
+    @Test
+    void completeResult_isCached() throws Exception {
+        MetadataCache cache = new MetadataCache("jdbc:sqlite::memory:");
+        HttpResponse<String> search = resp(200, EMPTY_SEARCH_JSON);
+        HttpResponse<String> asc404 = resp(404, "");   // sig ABSENT (success)
+        HttpResponse<String> pom    = resp(200, MINIMAL_POM);
+
+        doReturn(search).doReturn(asc404).doReturn(pom)
+            .when(mockHttp).send(any(HttpRequest.class), any());
+
+        new MavenCentralClient(mockHttp, cache).fetchMetadata(COORDS);
+
+        // ABSENT sig + POM parsed → complete → must be cached
+        assertThat(cache.get(COORDS)).isNotNull();
+    }
+
+    // ── A5: gpgKeyFingerprint wiring through fetchMetadata ───────────────────────
+
+    @Test
+    void fetchMetadata_withRealAscBody_populatesGpgKeyFingerprint() throws Exception {
+        byte[] ascBytes;
+        try (InputStream in = getClass().getClassLoader()
+                .getResourceAsStream("commons-lang3-3.14.0.jar.asc")) {
+            assertThat(in).isNotNull();
+            ascBytes = in.readAllBytes();
+        }
+        String ascBody = new String(ascBytes, java.nio.charset.StandardCharsets.UTF_8);
+
+        HttpResponse<String> search = resp(200, EMPTY_SEARCH_JSON);
+        HttpResponse<String> asc    = resp(200, ascBody);
+        HttpResponse<String> pom    = resp(200, MINIMAL_POM);
+
+        doReturn(search).doReturn(asc).doReturn(pom)
+            .when(mockHttp).send(any(HttpRequest.class), any());
+
+        VersionMetadata meta = client().fetchMetadata(COORDS);
+
+        assertThat(meta.signatureStatus()).isEqualTo(SignatureStatus.PRESENT);
+        assertThat(meta.gpgKeyFingerprint()).isEqualTo("86FDC7E2A11262CB");
+    }
+
     // --- helpers ---
 
     @SuppressWarnings("unchecked")

@@ -160,7 +160,13 @@ public class MavenCentralClient {
             publishedAt != null ? publishedAt : Instant.EPOCH,
             false           // isYanked: Maven Central is immutable
         );
-        if (cache != null) cache.put(coords, result);
+        // Only cache complete results. Partial/failed fetches (UNKNOWN sig or
+        // depCount == -1) MUST NOT be memoised — otherwise a transient 429 sticks
+        // for the full 24h TTL and rules abstain forever on that GAV.
+        boolean isComplete = sigStatus != SignatureStatus.UNKNOWN && depCount != -1;
+        if (cache != null && isComplete) {
+            cache.put(coords, result);
+        }
         return result;
     }
 

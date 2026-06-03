@@ -43,9 +43,9 @@ else
   echo "<project/>" > "${BASE_POM}"
 fi
 
-# ── run marshal diff ───────────────────────────────────────────────────────────
-# Use --fail-on never here so we always reach the comment/alert steps.
-# The real fail-on behaviour is applied manually at the end.
+# ── run marshal diff twice (cache makes the second call free) ─────────────────
+# Call 1: produce the markdown report with --fail-on never so we always
+#         reach the comment + alert steps below regardless of findings.
 set +e
 marshal diff \
   --base    "${BASE_POM}" \
@@ -54,10 +54,21 @@ marshal diff \
   --threshold "${THRESHOLD}" \
   --fail-on   never \
   > "${REPORT_FILE}"
+REPORT_EXIT=$?
+
+# Call 2: compute the real exit code using the caller's --fail-on setting.
+# All metadata is now in the SQLite cache — no HTTP calls, completes in ~ms.
+marshal diff \
+  --base    "${BASE_POM}" \
+  --head    "${HEAD_POM}" \
+  --output  json \
+  --threshold "${THRESHOLD}" \
+  --fail-on   "${FAIL_ON}" \
+  > /dev/null
 MARSHAL_EXIT=$?
 set -e
 
-echo "[marshal] Diff complete (exit ${MARSHAL_EXIT}). Report: ${REPORT_FILE}"
+echo "[marshal] Diff complete (report exit ${REPORT_EXIT}, policy exit ${MARSHAL_EXIT}). Report: ${REPORT_FILE}"
 
 # ── post / update PR comment ───────────────────────────────────────────────────
 if [ "${COMMENT_ON_PR}" = "true" ] && [ -n "${TOKEN}" ] && [ -n "${PR_NUMBER}" ]; then
