@@ -1,0 +1,27 @@
+# Add this to your repo at .github/workflows/marshal.yml
+name: Marshal
+
+on:
+  pull_request:
+    paths:
+      - 'pom.xml'
+      - 'build.gradle'
+      - 'build.gradle.kts'
+
+jobs:
+  marshal:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Marshal scan
+        uses: marshal-hq/marshal/marshal-action@v0.1.0
+        with:
+          pom-path: pom.xml
+          threshold: red
+          fail-on: fail
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -29,13 +29,16 @@ public class ScanCommand implements Callable<Integer> {
     @Option(names = "--pom", description = "Path to the pom.xml to scan", required = true)
     Path pomPath;
 
-    @Option(names = "--output", description = "Output format: human, json, md (default: human)")
+    @Option(names = "--output", description = "Output format: human, json, md (default: human)",
+            converter = CaseInsensitiveConverter.ForOutputFormat.class)
     OutputFormat outputFormat = OutputFormat.HUMAN;
 
-    @Option(names = "--threshold", description = "Risk level that triggers failure: green, yellow, orange, red (default: red)")
+    @Option(names = "--threshold", description = "Risk level that triggers failure: green, yellow, orange, red (default: red)",
+            converter = CaseInsensitiveConverter.ForSeverity.class)
     Severity threshold = Severity.RED;
 
-    @Option(names = "--fail-on", description = "Exit code behavior: fail, warn, never (default: fail)")
+    @Option(names = "--fail-on", description = "Exit code behavior: fail, warn, never (default: fail)",
+            converter = CaseInsensitiveConverter.ForFailOn.class)
     FailOn failOn = FailOn.FAIL;
 
     @Option(names = "--config", description = "Path to marshal.yml config file")

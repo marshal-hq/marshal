@@ -1,0 +1,12 @@
+# Demo config — points Marshal at the local pre-built cache
+# so the scan runs offline with no network requests.
+version: 1
+
+scan:
+  scopes:
+    - compile
+    - runtime
+
+thresholds:
+  fail-on: red
+  warn-on: orange
