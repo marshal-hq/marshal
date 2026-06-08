@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
@@ -40,10 +41,16 @@ class CliHelper {
     }
 
     static MavenCentralClient buildProductionClient() {
+        return buildProductionClient(null);
+    }
+
+    static MavenCentralClient buildProductionClient(Path cachePath) {
         try {
-            var cacheDir = Paths.get(System.getProperty("user.home"), ".marshal");
-            cacheDir.toFile().mkdirs();
-            MetadataCache cache = new MetadataCache(cacheDir.resolve("metadata.db"));
+            Path resolvedPath = cachePath != null
+                ? cachePath
+                : Paths.get(System.getProperty("user.home"), ".marshal", "metadata.db");
+            resolvedPath.toAbsolutePath().getParent().toFile().mkdirs();
+            MetadataCache cache = new MetadataCache(resolvedPath);
             return new MavenCentralClient(cache);
         }
         catch (Exception e) {

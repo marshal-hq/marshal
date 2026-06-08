@@ -136,6 +136,30 @@ class EnumParsingTest {
         assertThat(outBytes.toString()).startsWith("{");
     }
 
+    // ── --cache-path wiring ────────────────────────────────────────────────────
+
+    @Test
+    void scanCommand_acceptsCachePath() {
+        stubGreenScan();
+        int exit = new CommandLine(new ScanCommand(mockClient, mockResolver))
+            .execute("--pom", tempDir.resolve("pom.xml").toString(),
+                     "--cache-path", tempDir.resolve("custom.db").toString());
+        assertThat(exit).isNotEqualTo(2); // 2 = picocli parse error
+    }
+
+    @Test
+    void diffCommand_acceptsCachePath() {
+        when(mockResolver.resolve(tempDir.resolve("base.xml"))).thenReturn(List.of());
+        when(mockResolver.resolve(tempDir.resolve("head.xml"))).thenReturn(List.of(DEP));
+        when(mockClient.fetchMetadata(DEP)).thenReturn(SIGNED_META);
+
+        int exit = new CommandLine(new DiffCommand(mockClient, mockResolver))
+            .execute("--base", tempDir.resolve("base.xml").toString(),
+                     "--head", tempDir.resolve("head.xml").toString(),
+                     "--cache-path", tempDir.resolve("custom.db").toString());
+        assertThat(exit).isNotEqualTo(2);
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────────
 
     private void stubGreenScan() {
