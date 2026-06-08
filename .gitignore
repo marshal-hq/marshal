@@ -4,3 +4,6 @@ build/
 */build/
 *.class
 .idea/
+dist/*.jar
+dist/sha256sums.txt
+marshal-action/marshal-cli.jar

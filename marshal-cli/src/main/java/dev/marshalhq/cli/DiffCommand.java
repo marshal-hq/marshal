@@ -44,13 +44,16 @@ public class DiffCommand implements Callable<Integer> {
     @Option(names = "--head", description = "Path to the head pom.xml", required = true)
     Path headPom;
 
-    @Option(names = "--output", description = "Output format: human, json, md (default: md)")
+    @Option(names = "--output", description = "Output format: human, json, md (default: md)",
+            converter = CaseInsensitiveConverter.ForOutputFormat.class)
     OutputFormat outputFormat = OutputFormat.MD;
 
-    @Option(names = "--threshold", description = "Risk level that triggers failure (default: red)")
+    @Option(names = "--threshold", description = "Risk level that triggers failure (default: red)",
+            converter = CaseInsensitiveConverter.ForSeverity.class)
     Severity threshold = Severity.RED;
 
-    @Option(names = "--fail-on", description = "Exit code behavior: fail, warn, never (default: fail)")
+    @Option(names = "--fail-on", description = "Exit code behavior: fail, warn, never (default: fail)",
+            converter = CaseInsensitiveConverter.ForFailOn.class)
     FailOn failOn = FailOn.FAIL;
 
     @Option(names = "--config", description = "Path to marshal.yml config file")
