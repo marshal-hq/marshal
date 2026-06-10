@@ -21,8 +21,8 @@ public class DemoCacheBuilder {
     private static final List<Coordinates> DEMO_DEPS = List.of(
         new Coordinates("commons-logging",      "commons-logging",      "1.3.4"),
         new Coordinates("javax.inject",          "javax.inject",          "1"),
-        new Coordinates("commons-collections",   "commons-collections",   "3.2.2"),
-        new Coordinates("log4j",                 "log4j",                 "1.2.17")
+        new Coordinates("net.sf.jopt-simple",       "jopt-simple",           "5.0.4"),
+        new Coordinates("javax.activation",       "activation",            "1.1.1")
     );
 
     public static void main(String[] args) throws Exception {
