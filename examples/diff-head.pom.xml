@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Diff fixture — HEAD (the PR branch).
+  Diff fixture - HEAD (the PR branch).
 
   Used with:
     marshal diff --base examples/diff-base.pom.xml --head examples/diff-head.pom.xml

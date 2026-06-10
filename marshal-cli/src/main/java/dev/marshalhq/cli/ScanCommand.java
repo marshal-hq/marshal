@@ -44,6 +44,9 @@ public class ScanCommand implements Callable<Integer> {
     @Option(names = "--config", description = "Path to marshal.yml config file")
     Path configPath;
 
+    @Option(names = "--cache-path", description = "Override default cache location (~/.marshal/metadata.db)")
+    Path cachePath;
+
     @Option(names = "--slack-webhook",
             description = "Slack webhook URL. Overrides notifications.slack.webhook in marshal.yml.")
     String slackWebhookFlag = "";
@@ -70,7 +73,7 @@ public class ScanCommand implements Callable<Integer> {
         PomDependencyResolver resolver = injectedResolver != null
                 ? injectedResolver : new PomDependencyResolver();
         MavenCentralClient client = injectedClient != null
-                ? injectedClient : CliHelper.buildProductionClient();
+                ? injectedClient : CliHelper.buildProductionClient(cachePath);
 
         RuleEngine engine = CliHelper.buildEngine();
         Set<String> highReps = CliHelper.loadHighReputationGAs();
