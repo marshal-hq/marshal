@@ -1,6 +1,6 @@
-name: 'Marshal Dependency Security'
-description: 'Behavioral security monitoring for software dependencies — detects supply-chain attacks via behavioral heuristics.'
-author: 'Marshal Security'
+name: 'Marshal Dependency Analysis'
+description: 'Behavioral supply-chain security scanner for JVM dependencies'
+author: 'Marshal (marshalhq.dev)'
 
 branding:
   icon: 'shield'
@@ -8,27 +8,27 @@ branding:
 
 inputs:
   pom-path:
-    description: 'Path to pom.xml or build.gradle relative to the repository root.'
+    description: 'Path to pom.xml'
     default: 'pom.xml'
   threshold:
-    description: 'Minimum risk level that fails the check. One of: green, yellow, orange, red.'
+    description: 'Risk level that fails the check (green/yellow/orange/red)'
     default: 'red'
   comment-on-pr:
-    description: 'Post (or update) a risk summary comment on the pull request.'
+    description: 'Post a risk summary comment on the PR'
     default: 'true'
   fail-on:
-    description: 'Exit code behavior when threshold is breached. One of: fail, warn, never.'
+    description: 'Exit code behavior: fail, warn, never'
     default: 'fail'
   slack-webhook:
-    description: 'Slack incoming webhook URL. If provided, sends an alert when RED findings are detected.'
+    description: 'Slack webhook URL for critical alerts'
     required: false
 
 runs:
   using: 'docker'
-  image: 'Dockerfile'
+  image: 'docker://ghcr.io/marshal-hq/marshal-action:0.1.0'
   env:
-    INPUT_POM_PATH:      ${{ inputs.pom-path }}
-    INPUT_THRESHOLD:     ${{ inputs.threshold }}
+    INPUT_POM_PATH: ${{ inputs.pom-path }}
+    INPUT_THRESHOLD: ${{ inputs.threshold }}
     INPUT_COMMENT_ON_PR: ${{ inputs.comment-on-pr }}
-    INPUT_FAIL_ON:       ${{ inputs.fail-on }}
+    INPUT_FAIL_ON: ${{ inputs.fail-on }}
     INPUT_SLACK_WEBHOOK: ${{ inputs.slack-webhook }}
