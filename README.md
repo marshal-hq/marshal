@@ -11,6 +11,10 @@ build.
 
 ![PR comment showing Marshal findings](docs/images/pr-comment.png)
 
+![Marshal demo](docs/images/demo.gif)
+
+*javax.activation:activation scores ORANGE 55/100 — GPG signature dropped between versions.*
+
 ## Quick start
 
 Add this to your repo at `.github/workflows/marshal.yml`:
@@ -73,8 +77,8 @@ each reconstructed from metadata that was visible at the time:
 
 **event-stream (npm, 2018):** A new maintainer published a version with a
 malicious dependency (flatmap-stream) and no GPG signature. Marshal's
-NEW_MAINTAINER, DEPENDENCY_EXPLOSION, and SIGNATURE_DROPPED signals fire,
-scoring RED.
+NEW_MAINTAINER (35) and DEPENDENCY_EXPLOSION (25) signals fire, scoring
+ORANGE at 60 points.
 
 **ua-parser-js (npm, 2021):** Account takeover. The attacker published from a
 different key. NEW_MAINTAINER and SIGNATURE_DROPPED fire, scoring RED.
