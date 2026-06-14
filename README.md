@@ -6,7 +6,7 @@ Marshal watches how packages change on Maven Central and scores every update
 on a 0–100 risk scale. A maintainer swap, a dropped GPG signature, a sudden
 jump in dependency count: these show up the day a version is published, long
 before a CVE exists. Risky updates fail your PR check with a clear reason.
-It's built for Java and Gradle teams that auto-merge dependency updates and
+It's built for Java teams on Maven that auto-merge dependency updates and
 want a way to catch the bad ones before they hit the build.
 
 ![PR comment showing Marshal findings](docs/images/pr-comment.png)
@@ -27,7 +27,7 @@ name: Marshal
 
 on:
   pull_request:
-    paths: ['pom.xml', 'build.gradle', 'build.gradle.kts']
+    paths: ['pom.xml']
 
 jobs:
   marshal:
@@ -61,10 +61,10 @@ java -jar marshal.jar scan --pom pom.xml
 ## Using Marshal
 
 **On a pull request (recommended).** Add the workflow above. On every PR that
-touches `pom.xml` or `build.gradle`, Marshal scans the dependency changes and
-posts a comment with any findings. Set `fail-on: fail` with `threshold: red`
-to block merges on critical findings, or set `fail-on: never` to comment
-without blocking. Safe updates pass silently.
+touches `pom.xml`, Marshal scans the dependency changes and posts a comment
+with any findings. Set `fail-on: fail` with `threshold: red` to block merges
+on critical findings, or set `fail-on: never` to comment without blocking.
+Safe updates pass silently.
 
 **Locally, before you commit.** Scan any project from the command line:
 
@@ -171,17 +171,20 @@ fire when findings reach or exceed `min-level`.
 ## Status
 
 Marshal is in early development (v0.1.0). The detection engine covers Maven
-Central with 7 behavioral rules. npm and PyPI support are planned.
+Central with 7 behavioral rules. Gradle is coming soon, with npm and PyPI
+after that.
 
 What works:
-- CLI scanning of Maven/Gradle projects
+- CLI scanning of Maven (pom.xml) projects
 - GitHub Action with PR comments
 - Risk scoring with configurable thresholds
 - Slack alerts on critical findings
 
 What's next:
+- Gradle build file support (build.gradle, build.gradle.kts) — coming soon
 - Transitive dependency resolution (currently direct deps only)
 - npm ecosystem support
+- PyPI ecosystem support
 - Hosted continuous watching (SaaS)
 
 ## License
