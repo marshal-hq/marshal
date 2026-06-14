@@ -26,7 +26,7 @@ Type "# Scanning a Spring Boot project for supply-chain anomalies..."
 Enter
 Sleep 500ms
 
-Type "java -jar marshal.jar scan --pom examples/demo/pom.xml --config examples/demo/marshal.yml"
+Type "java -jar marshal.jar scan --pom examples/demo/pom.xml --cache-path examples/demo/marshal-cache.db --config examples/demo/marshal.yml"
 Sleep 500ms
 Enter
 Sleep 4s
