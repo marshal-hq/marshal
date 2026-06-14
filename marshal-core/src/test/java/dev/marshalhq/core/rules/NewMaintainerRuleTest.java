@@ -40,6 +40,15 @@ class NewMaintainerRuleTest {
     }
 
     @Test
+    void doesNotFireWhenBothEmailsAreNull() {
+        // Maven Central does not expose publisher email; null on both sides is the common path.
+        VersionMetadata current = TestFixtures.metadata("2.0.0", true, null);
+        VersionMetadata previous = TestFixtures.metadata("1.0.0", true, null);
+        RuleResult result = rule.evaluate(TestFixtures.ctx(current, previous));
+        assertThat(result.scoreContribution()).isEqualTo(0);
+    }
+
+    @Test
     void firesWhenGpgFingerprintChanges() {
         VersionMetadata current = TestFixtures.withFingerprint("2.0.0", true, "alice@example.com", "BBBBBBBB");
         VersionMetadata previous = TestFixtures.withFingerprint("1.0.0", true, "alice@example.com", "AAAAAAAA");
