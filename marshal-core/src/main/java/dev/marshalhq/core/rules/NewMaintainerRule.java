@@ -33,9 +33,10 @@ public class NewMaintainerRule implements Rule {
                 && !cur.gpgKeyFingerprint().equals(prev.gpgKeyFingerprint());
 
         if (emailChanged || keyChanged) {
-            return new RuleResult(35, Severity.ORANGE,
-                    "Publisher identity changed from [" + prev.publisherEmail() +
-                            "] to [" + cur.publisherEmail() + "]");
+            String evidence = emailChanged
+                    ? "Publisher email changed from [" + prev.publisherEmail() + "] to [" + cur.publisherEmail() + "]"
+                    : "Publisher signing key changed from [" + prev.gpgKeyFingerprint() + "] to [" + cur.gpgKeyFingerprint() + "]";
+            return new RuleResult(35, Severity.ORANGE, evidence);
         }
         return new RuleResult(0, Severity.GREEN, "");
     }

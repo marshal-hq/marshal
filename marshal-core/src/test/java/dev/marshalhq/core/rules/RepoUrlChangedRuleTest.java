@@ -41,6 +41,17 @@ class RepoUrlChangedRuleTest {
     }
 
     @Test
+    void doesNotFireWhenOnlyTagSegmentChanges() {
+        // Tag name differs but the base repository path is identical — not a supply-chain signal.
+        VersionMetadata current  = TestFixtures.metadata("1.2.17", true, null, 5,
+                "http://svn.apache.org/viewvc/logging/log4j/tags/v1_2_17_rc3", false);
+        VersionMetadata previous = TestFixtures.metadata("1.2.16", true, null, 5,
+                "http://svn.apache.org/viewvc/logging/log4j/tags/v1_2_16", false);
+        RuleResult result = rule.evaluate(TestFixtures.ctx(current, previous));
+        assertThat(result.scoreContribution()).isEqualTo(0);
+    }
+
+    @Test
     void doesNotFireWhenBothPreviousAndCurrentHaveNoUrl() {
         VersionMetadata current = TestFixtures.metadata("2.0.0", true, "alice@example.com", 5, null, false);
         VersionMetadata previous = TestFixtures.metadata("1.0.0", true, "alice@example.com", 5, null, false);

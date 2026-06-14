@@ -22,6 +22,7 @@ class NewMaintainerRuleTest {
         RuleResult result = rule.evaluate(TestFixtures.ctx(current, previous));
         assertThat(result.scoreContribution()).isEqualTo(35);
         assertThat(result.severity()).isEqualTo(Severity.ORANGE);
+        assertThat(result.evidence()).contains("alice@example.com").contains("eve@attacker.com");
     }
 
     @Test
@@ -54,5 +55,6 @@ class NewMaintainerRuleTest {
         VersionMetadata previous = TestFixtures.withFingerprint("1.0.0", true, "alice@example.com", "AAAAAAAA");
         RuleResult result = rule.evaluate(TestFixtures.ctx(current, previous));
         assertThat(result.scoreContribution()).isEqualTo(35);
+        assertThat(result.evidence()).contains("AAAAAAAA").contains("BBBBBBBB");
     }
 }

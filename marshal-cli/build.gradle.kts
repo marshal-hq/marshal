@@ -3,6 +3,34 @@ plugins {
     id("info.solidsoft.pitest") version "1.15.0"
 }
 
+configurations {
+    create("integrationTestImplementation") {
+        extendsFrom(configurations.testImplementation.get())
+    }
+    create("integrationTestRuntimeOnly") {
+        extendsFrom(configurations.testRuntimeOnly.get())
+    }
+}
+
+sourceSets {
+    create("integrationTest") {
+        compileClasspath += sourceSets.main.get().output
+        runtimeClasspath += sourceSets.main.get().output
+    }
+}
+
+tasks.register<Test>("integrationTest") {
+    description = "Runs integration tests against real Maven Central"
+    group = "verification"
+    testClassesDirs = sourceSets["integrationTest"].output.classesDirs
+    classpath = sourceSets["integrationTest"].runtimeClasspath
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+        showStandardStreams = false
+    }
+}
+
 dependencies {
     implementation(project(":marshal-core"))
     implementation(project(":marshal-resolvers"))

@@ -1,6 +1,7 @@
 package dev.marshalhq.cli;
 
 import dev.marshalhq.core.Finding;
+import dev.marshalhq.core.RuleResult;
 import dev.marshalhq.core.Severity;
 import picocli.CommandLine.Help.Ansi;
 
@@ -57,6 +58,11 @@ public class TerminalReporter implements Reporter {
 
         for (Finding f : flagged) {
             out.println(Ansi.AUTO.string(findingRow(f)));
+            for (RuleResult signal : f.signals()) {
+                if (signal.evidence() != null && !signal.evidence().isBlank()) {
+                    out.println(Ansi.AUTO.string(evidenceLine(signal)));
+                }
+            }
         }
 
         if (!flagged.isEmpty()) {
@@ -107,6 +113,15 @@ public class TerminalReporter implements Reporter {
         int pad = Math.max(2, width - leftLen - score.length());
 
         return badge + " " + content + " ".repeat(pad) + score;
+    }
+
+    private static String evidenceLine(RuleResult signal) {
+        String coloredId = switch (signal.severity()) {
+            case RED            -> "@|red " + signal.ruleId() + "|@";
+            case ORANGE, YELLOW -> "@|yellow " + signal.ruleId() + "|@";
+            case GREEN          -> signal.ruleId();
+        };
+        return "    ↳ " + coloredId + "  " + signal.evidence();
     }
 
     private String divider(String label) {

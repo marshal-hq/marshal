@@ -3,11 +3,11 @@
 Behavioral supply-chain security for JVM dependencies.
 
 Marshal watches how packages change on Maven Central and scores every update
-on a 0–100 risk scale. It flags maintainer swaps, signature drops, and
-dependency explosions before anyone files a CVE. Risky updates fail your PR
-check with a clear reason. It's for Java and Gradle teams who auto-merge
-dependency updates and want to catch malicious ones before they reach the
-build.
+on a 0–100 risk scale. A maintainer swap, a dropped GPG signature, a sudden
+jump in dependency count: these show up the day a version is published, long
+before a CVE exists. Risky updates fail your PR check with a clear reason.
+It's built for Java and Gradle teams that auto-merge dependency updates and
+want a way to catch the bad ones before they hit the build.
 
 ![PR comment showing Marshal findings](docs/images/pr-comment.png)
 
@@ -16,6 +16,9 @@ build.
 *javax.activation:activation scores ORANGE 55/100 — GPG signature dropped between versions.*
 
 ## Quick start
+
+Requires Java 21 or later to run the CLI. The GitHub Action bundles its own
+runtime, so there's nothing to install on the Action path.
 
 Add this to your repo at `.github/workflows/marshal.yml`:
 
@@ -55,6 +58,31 @@ curl -fsSL https://github.com/marshal-hq/marshal/releases/download/v0.1.0/marsha
 java -jar marshal.jar scan --pom pom.xml
 ```
 
+## Using Marshal
+
+**On a pull request (recommended).** Add the workflow above. On every PR that
+touches `pom.xml` or `build.gradle`, Marshal scans the dependency changes and
+posts a comment with any findings. Set `fail-on: fail` with `threshold: red`
+to block merges on critical findings, or set `fail-on: never` to comment
+without blocking. Safe updates pass silently.
+
+**Locally, before you commit.** Scan any project from the command line:
+
+```bash
+java -jar marshal.jar scan --pom pom.xml
+```
+
+Pick an output format depending on where the result goes:
+
+```bash
+java -jar marshal.jar scan --pom pom.xml                 # human-readable terminal output
+java -jar marshal.jar scan --pom pom.xml --output json   # for CI and scripting
+java -jar marshal.jar scan --pom pom.xml --output md      # markdown, e.g. for PR comments
+```
+
+Marshal exits with a non-zero code when a finding reaches your `fail-on`
+threshold, so it drops into any CI pipeline, not just GitHub Actions.
+
 ## What it catches
 
 | Signal | What it means |
@@ -76,9 +104,8 @@ Five historical supply-chain attacks are in the test suite as replay fixtures,
 each reconstructed from metadata that was visible at the time:
 
 **event-stream (npm, 2018):** A new maintainer published a version with a
-malicious dependency (flatmap-stream) and no GPG signature. Marshal's
-NEW_MAINTAINER (35) and DEPENDENCY_EXPLOSION (25) signals fire, scoring
-ORANGE at 60 points.
+malicious dependency (flatmap-stream) and no GPG signature. The NEW_MAINTAINER
+and DEPENDENCY_EXPLOSION signals fire, scoring ORANGE at 60 points.
 
 **ua-parser-js (npm, 2021):** Account takeover. The attacker published from a
 different key. NEW_MAINTAINER and SIGNATURE_DROPPED fire, scoring RED.
@@ -91,11 +118,11 @@ yanked. SIGNATURE_DROPPED, DEPENDENCY_EXPLOSION, and YANKED_VERSION fire.
 published to PyPI before the legitimate one. First publish with no signature
 and later yanked: MISSING_SIGNATURE and YANKED_VERSION score YELLOW.
 
-**XZ Utils (2024):** Slow social engineering over two years. Marshal would
-have flagged the initial maintainer handoff (NEW_MAINTAINER, partial signal).
-But XZ was designed to evade automated detection. The attacker spent months
-building trust before introducing the backdoor. That's a real limitation of
-the behavioral approach, not a gap the tool tries to paper over.
+**XZ Utils (2024):** Slow social engineering over two years. Marshal would have
+caught the initial maintainer handoff (NEW_MAINTAINER, partial signal), but the
+attacker spent months earning trust before introducing the backdoor, which is
+exactly the kind of thing static behavioral signals miss. Worth being honest
+about: this is a limit of the approach, not a case the tool handles.
 
 ## How it works
 
@@ -103,16 +130,16 @@ the behavioral approach, not a gap the tool tries to paper over.
    in your project from Maven Central.
 2. **ANALYZE:** Each new version is scored against 7 behavioral signals:
    maintainer changes, signature drops, dependency explosions, and more.
-3. **BLOCK:** Risky updates fail your PR check with a clear reason.
-   Safe updates pass silently.
+3. **BLOCK:** Risky updates fail your PR check with a clear reason. Safe
+   updates pass silently.
 
 ## What Marshal is not
 
-Marshal is not a CVE scanner. It doesn't look up known vulnerabilities.
-Tools like Snyk, Dependabot, and OWASP Dependency-Check already do that well.
-Marshal catches the things they structurally can't: the malicious update
-that hasn't been reported yet. You probably want to run Marshal alongside
-your existing CVE scanner, not instead of it.
+Marshal is not a CVE scanner. It doesn't look up known vulnerabilities, and it
+isn't trying to. Snyk, Dependabot, and OWASP Dependency-Check already handle
+that. What they can't see is the malicious update that nobody has reported yet,
+because there's no CVE on day zero. That's the gap Marshal fills. Keep your CVE
+scanner. Add Marshal next to it.
 
 ## Configuration
 
@@ -138,8 +165,8 @@ notifications:
 ```
 
 Full reference: [examples/marshal.yml](examples/marshal.yml). Rules can be
-disabled individually. Allowlisted packages are skipped entirely. Slack
-alerts fire when findings reach or exceed `min-level`.
+disabled individually. Allowlisted packages are skipped entirely. Slack alerts
+fire when findings reach or exceed `min-level`.
 
 ## Status
 

@@ -24,6 +24,13 @@ class TerminalReporterTest {
         return new Finding(coords, from, to, score, level, List.of(), false, false);
     }
 
+    private static Finding findingWithSignals(String ga, String from, String to,
+            int score, Severity level, List<RuleResult> signals) {
+        String[] parts = ga.split(":");
+        Coordinates coords = new Coordinates(parts[0], parts[1], to);
+        return new Finding(coords, from, to, score, level, signals, false, false);
+    }
+
     private static Finding findingWithUnknown(String ga, String to) {
         String[] parts = ga.split(":");
         Coordinates coords = new Coordinates(parts[0], parts[1], to);
@@ -165,6 +172,30 @@ class TerminalReporterTest {
 
         assertThat(out).doesNotContain("could not be fully resolved");
         assertThat(out).doesNotContain("incomplete metadata");
+    }
+
+    @Test
+    void evidenceLinesAppearsIndentedBelowFindingRow() {
+        RuleResult sig = new RuleResult(35, Severity.ORANGE,
+                "Publisher signing key changed from [AAAA] to [BBBB]", "NEW-MAINTAINER");
+        Finding f = findingWithSignals("com.example:risky-lib", "1.0.0", "2.0.0",
+                35, Severity.YELLOW, List.of(sig));
+        String out = render(List.of(f));
+
+        int badgePos = out.indexOf("● YELLOW");
+        int arrowPos = out.indexOf("↳");
+        assertThat(arrowPos).isGreaterThan(badgePos);
+        assertThat(out).contains("NEW-MAINTAINER");
+        assertThat(out).contains("Publisher signing key changed from [AAAA] to [BBBB]");
+    }
+
+    @Test
+    void signalWithBlankEvidence_notRendered() {
+        RuleResult sig = new RuleResult(10, Severity.YELLOW, "", "SOME-RULE");
+        Finding f = findingWithSignals("com.example:lib", "1.0", "2.0", 10, Severity.YELLOW, List.of(sig));
+        String out = render(List.of(f));
+
+        assertThat(out).doesNotContain("↳");
     }
 
     @Test

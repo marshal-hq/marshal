@@ -1,21 +1,36 @@
 package dev.marshalhq.cli;
 
-import dev.marshalhq.core.*;
-import dev.marshalhq.core.config.MarshalConfig;
-import dev.marshalhq.core.config.MarshalConfigLoader;
-import dev.marshalhq.registry.MavenCentralClient;
-import dev.marshalhq.resolvers.PomDependencyResolver;
-import picocli.CommandLine.Command;
-import picocli.CommandLine.Option;
+import java.io.PrintWriter;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.PrintWriter;
-import java.nio.file.Path;
-import java.time.Instant;
-import java.util.*;
-import java.util.concurrent.*;
+import dev.marshalhq.core.Coordinates;
+import dev.marshalhq.core.Finding;
+import dev.marshalhq.core.RuleEngine;
+import dev.marshalhq.core.Severity;
+import dev.marshalhq.core.VersionMetadata;
+import dev.marshalhq.core.config.MarshalConfig;
+import dev.marshalhq.core.config.MarshalConfigLoader;
+import dev.marshalhq.registry.MavenCentralClient;
+import dev.marshalhq.resolvers.DependencyScope;
+import dev.marshalhq.resolvers.PomDependencyResolver;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.Option;
 
 @Command(
         name = "scan",
@@ -71,7 +86,8 @@ public class ScanCommand implements Callable<Integer> {
     public Integer call() {
         MarshalConfig config = MarshalConfigLoader.load(configPath);
         PomDependencyResolver resolver = injectedResolver != null
-                ? injectedResolver : new PomDependencyResolver();
+                ? injectedResolver : new PomDependencyResolver(
+                        DependencyScope.fromNames(config.getScan().getScopes()));
         MavenCentralClient client = injectedClient != null
                 ? injectedClient : CliHelper.buildProductionClient(cachePath);
 
@@ -92,12 +108,11 @@ public class ScanCommand implements Callable<Integer> {
 
         // Step 1: version histories in parallel
         ConcurrentHashMap<String, List<String>> histories = new ConcurrentHashMap<>();
-        CliHelper.awaitAll(resolved.stream().map(coords ->
+        CliHelper.awaitAll(resolved.stream().map(coordinates ->
                 CompletableFuture.runAsync(() -> {
                     CliHelper.acquire(semaphore);
                     try {
-                        histories.put(coords.toGa(),
-                                client.getVersionHistory(coords.groupId(), coords.artifactId()));
+                        histories.put(coordinates.toGa(), client.getVersionHistory(coordinates.groupId(), coordinates.artifactId()));
                     }
                     finally {
                         semaphore.release();

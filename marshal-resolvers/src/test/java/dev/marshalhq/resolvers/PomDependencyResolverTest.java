@@ -2,6 +2,7 @@ package dev.marshalhq.resolvers;
 
 import dev.marshalhq.core.Coordinates;
 import org.junit.jupiter.api.BeforeEach;
+import java.util.EnumSet;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -223,6 +224,43 @@ class PomDependencyResolverTest {
 
         List<Coordinates> deps = resolver.resolve(pom);
         assertThat(deps).isEmpty();
+    }
+
+    @Test
+    void honorsCustomScopesFromConstructor(@TempDir Path tempDir) throws IOException {
+        // When caller adds TEST to the included-scopes set, test-scoped deps must appear.
+        resolver = new PomDependencyResolver(
+                EnumSet.of(DependencyScope.COMPILE, DependencyScope.RUNTIME, DependencyScope.TEST));
+        Path pom = writePom(tempDir, """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0"
+                     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+                <modelVersion>4.0.0</modelVersion>
+                <groupId>com.example</groupId>
+                <artifactId>test-app</artifactId>
+                <version>1.0.0</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.apache.commons</groupId>
+                        <artifactId>commons-lang3</artifactId>
+                        <version>3.13.0</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.junit.jupiter</groupId>
+                        <artifactId>junit-jupiter</artifactId>
+                        <version>5.10.2</version>
+                        <scope>test</scope>
+                    </dependency>
+                </dependencies>
+            </project>
+            """);
+
+        List<Coordinates> deps = resolver.resolve(pom);
+
+        assertThat(deps).hasSize(2);
+        assertThat(deps).anyMatch(c -> c.artifactId().equals("commons-lang3"));
+        assertThat(deps).anyMatch(c -> c.artifactId().equals("junit-jupiter"));
     }
 
     @Test

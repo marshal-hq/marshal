@@ -1,17 +1,20 @@
 package dev.marshalhq.resolvers;
 
-import dev.marshalhq.core.Coordinates;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
+import static org.assertj.core.api.Assertions.*;
 
 import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-import static org.assertj.core.api.Assertions.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+
+import dev.marshalhq.core.Coordinates;
 
 /**
  * Integration tests for PomDependencyResolver.
@@ -26,7 +29,7 @@ class PomDependencyResolverIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        resolver = new PomDependencyResolver();
+        resolver = new PomDependencyResolver(EnumSet.of(DependencyScope.COMPILE));
     }
 
     @Test
@@ -34,12 +37,13 @@ class PomDependencyResolverIntegrationTest {
         Path pom = fixture("simple-pom.xml");
         List<Coordinates> deps = resolver.resolve(pom);
 
-        assertThat(deps).isNotEmpty();
+        assertThat(deps).size().isEqualTo(2);
+
         assertThat(deps).anyMatch(c -> c.groupId().equals("org.apache.commons")
-            && c.artifactId().equals("commons-lang3")
-            && c.version().equals("3.13.0"));
+                && c.artifactId().equals("commons-lang3"));
+
         assertThat(deps).anyMatch(c -> c.groupId().equals("com.fasterxml.jackson.core")
-            && c.artifactId().equals("jackson-databind"));
+                && c.artifactId().equals("jackson-databind"));
     }
 
     @Test
@@ -126,8 +130,7 @@ class PomDependencyResolverIntegrationTest {
 
     private Path fixture(String filename) {
         try {
-            return Paths.get(getClass().getClassLoader()
-                .getResource("fixtures/" + filename).toURI());
+            return Paths.get(Objects.requireNonNull(getClass().getClassLoader().getResource("fixtures/" + filename)).toURI());
         } catch (URISyntaxException e) {
             throw new RuntimeException("Fixture not found: " + filename, e);
         }

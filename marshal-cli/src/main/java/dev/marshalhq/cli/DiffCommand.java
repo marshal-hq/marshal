@@ -4,6 +4,7 @@ import dev.marshalhq.core.*;
 import dev.marshalhq.core.config.MarshalConfig;
 import dev.marshalhq.core.config.MarshalConfigLoader;
 import dev.marshalhq.registry.MavenCentralClient;
+import dev.marshalhq.resolvers.DependencyScope;
 import dev.marshalhq.resolvers.PomDependencyResolver;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -86,7 +87,8 @@ public class DiffCommand implements Callable<Integer> {
     public Integer call() {
         MarshalConfig config = MarshalConfigLoader.load(configPath);
         PomDependencyResolver resolver = injectedResolver != null
-                ? injectedResolver : new PomDependencyResolver();
+                ? injectedResolver : new PomDependencyResolver(
+                        DependencyScope.fromNames(config.getScan().getScopes()));
         MavenCentralClient client = injectedClient != null
                 ? injectedClient : CliHelper.buildProductionClient(cachePath);
 
