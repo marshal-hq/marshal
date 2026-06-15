@@ -6,15 +6,14 @@ import dev.marshalhq.core.Severity;
 import picocli.CommandLine.Help.Ansi;
 
 import java.io.PrintWriter;
-import java.util.Comparator;
 import java.util.List;
 
 /**
  * ANSI terminal reporter. Follows DESIGN-SYSTEM.md §8 verbatim.
  * <p>
  * Badge strings:
- * RED    → @|red ● RED   |@
- * ORANGE → @|yellow ● ORANGE |@
+ * RED    → @|bold,red ● RED   |@
+ * ORANGE → @|fg(208) ● ORANGE |@   (256-color orange; falls back to default on basic terminals)
  * YELLOW → @|yellow ● YELLOW |@
  * GREEN  → @|green ● GREEN  |@  (not rendered — GREEN passes silently)
  * <p>
@@ -23,40 +22,56 @@ import java.util.List;
  */
 public class TerminalReporter implements Reporter {
 
-    private static final String BADGE_RED = "@|red ● RED   |@";
-    private static final String BADGE_ORANGE = "@|yellow ● ORANGE |@";
+    private static final String BADGE_RED = "@|bold,red ● RED   |@";
+    private static final String BADGE_ORANGE = "@|fg(208) ● ORANGE |@";
     private static final String BADGE_YELLOW = "@|yellow ● YELLOW |@";
 
     private final int width;
+    private final boolean showAdvisory;
+    private final boolean showUnresolved;
 
     public TerminalReporter() {
-        this(detectWidth());
+        this(detectWidth(), false, false);
+    }
+
+    public TerminalReporter(boolean showAdvisory) {
+        this(detectWidth(), showAdvisory, false);
+    }
+
+    public TerminalReporter(boolean showAdvisory, boolean showUnresolved) {
+        this(detectWidth(), showAdvisory, showUnresolved);
     }
 
     /**
      * Package-private: use a fixed width in tests for deterministic assertions.
      */
     TerminalReporter(int width) {
+        this(width, false, false);
+    }
+
+    TerminalReporter(int width, boolean showAdvisory) {
+        this(width, showAdvisory, false);
+    }
+
+    TerminalReporter(int width, boolean showAdvisory, boolean showUnresolved) {
         this.width = width;
+        this.showAdvisory = showAdvisory;
+        this.showUnresolved = showUnresolved;
     }
 
     @Override
-    public void report(List<Finding> findings, PrintWriter out) {
+    public void report(ScanReport report, PrintWriter out) {
         // ── Header ──────────────────────────────────────────────────────────────
         out.println(divider("MARSHAL SCAN"));
         out.println(Ansi.AUTO.string(
                 "@|yellow WATCH|@ → @|yellow ANALYZE|@ → @|red BLOCK|@"));
         out.println();
 
-        // ── Flagged findings (YELLOW / ORANGE / RED), highest score first ───────
-        List<Finding> flagged = findings.stream()
-                .filter(f -> !f.isUnresolved()
-                        && f.riskLevel() != null
-                        && f.riskLevel() != Severity.GREEN)
-                .sorted(Comparator.comparingInt(Finding::riskScore).reversed())
-                .toList();
+        // ── Findings rendered in full, highest score first ───────────────────────
+        // Shared render policy: RED/ORANGE always; YELLOW only with --show-advisory.
+        List<Finding> shown = report.detail(showAdvisory);
 
-        for (Finding f : flagged) {
+        for (Finding f : shown) {
             out.println(Ansi.AUTO.string(findingRow(f)));
             for (RuleResult signal : f.signals()) {
                 if (signal.evidence() != null && !signal.evidence().isBlank()) {
@@ -65,33 +80,35 @@ public class TerminalReporter implements Reporter {
             }
         }
 
-        if (!flagged.isEmpty()) {
+        if (!shown.isEmpty()) {
             out.println();
         }
 
         // ── Summary divider ──────────────────────────────────────────────────────
         out.println(divider(null));
 
-        long flaggedCount = flagged.size();
-        long unresolvedCount = findings.stream().filter(Finding::isUnresolved).count();
-        long totalCount = findings.size();
-
-        out.printf("%d %s — %d flagged%n",
+        long totalCount = report.total();
+        out.printf("%d %s — %s%n",
                 totalCount,
                 totalCount == 1 ? "dependency" : "dependencies",
-                flaggedCount);
+                report.summaryClause());
 
         // ── UNRESOLVED section (S06) ─────────────────────────────────────────────
+        long unresolvedCount = report.unresolved().size();
         if (unresolvedCount > 0) {
             out.printf("%n%d %s could not be fully resolved — manual review recommended%n",
                     unresolvedCount,
                     unresolvedCount == 1 ? "dependency" : "dependencies");
+            if (showUnresolved) {
+                for (Finding f : report.unresolved()) {
+                    out.println(Ansi.AUTO.string(
+                            "@|fg(245)  · " + f.coordinates().toGa() + "|@"));
+                }
+            }
         }
 
         // ── UNKNOWN metadata notice ──────────────────────────────────────────────
-        long unknownCount = findings.stream()
-                .filter(f -> !f.isUnresolved() && f.hasUnknownMetadata())
-                .count();
+        long unknownCount = report.unknownMetadataCount();
         if (unknownCount > 0) {
             out.printf("%d %s had incomplete metadata — results may be partial%n",
                     unknownCount,
@@ -117,9 +134,10 @@ public class TerminalReporter implements Reporter {
 
     private static String evidenceLine(RuleResult signal) {
         String coloredId = switch (signal.severity()) {
-            case RED            -> "@|red " + signal.ruleId() + "|@";
-            case ORANGE, YELLOW -> "@|yellow " + signal.ruleId() + "|@";
-            case GREEN          -> signal.ruleId();
+            case RED    -> "@|bold,red " + signal.ruleId() + "|@";
+            case ORANGE -> "@|fg(208) " + signal.ruleId() + "|@";
+            case YELLOW -> "@|yellow " + signal.ruleId() + "|@";
+            case GREEN  -> signal.ruleId();
         };
         return "    ↳ " + coloredId + "  " + signal.evidence();
     }

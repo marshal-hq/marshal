@@ -4,7 +4,6 @@ import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +54,12 @@ public class ScanCommand implements Callable<Integer> {
     @Option(names = "--fail-on", description = "Exit code behavior: fail, warn, never (default: fail)",
             converter = CaseInsensitiveConverter.ForFailOn.class)
     FailOn failOn = FailOn.FAIL;
+
+    @Option(names = "--show-advisory", description = "Render YELLOW advisory findings in full detail (default: count only)")
+    boolean showAdvisory = false;
+
+    @Option(names = "--show-unresolved", description = "List each unresolved dependency by name (default: count only)")
+    boolean showUnresolved = false;
 
     @Option(names = "--config", description = "Path to marshal.yml config file")
     Path configPath;
@@ -132,8 +137,12 @@ public class ScanCommand implements Callable<Integer> {
         }
 
         // Step 3: fan-out metadata fetches (current + previous) in parallel
+        // Packages with no version history are not on the registry — skip fetching entirely
+        // so rules never fire on them (they receive the stub with UNKNOWN signature status).
         ConcurrentHashMap<String, VersionMetadata> metaByGav = new ConcurrentHashMap<>();
-        List<Coordinates> toFetch = new ArrayList<>(resolved);
+        List<Coordinates> toFetch = new ArrayList<>(resolved.stream()
+                .filter(c -> !histories.getOrDefault(c.toGa(), List.of()).isEmpty())
+                .toList());
         previousCoords.values().forEach(toFetch::add);
         CliHelper.awaitAll(toFetch.stream().map(coords ->
                 CompletableFuture.runAsync(() -> {
@@ -161,14 +170,15 @@ public class ScanCommand implements Callable<Integer> {
             findings.add(Finding.unresolved(coords));
         }
 
-        // Step 5: report
+        // Step 5: classify once, then report
+        ScanReport report = ScanReport.from(findings);
         PrintWriter writer = new PrintWriter(System.out, true);
         Reporter reporter = switch (outputFormat) {
-            case HUMAN -> new TerminalReporter();
+            case HUMAN -> new TerminalReporter(showAdvisory, showUnresolved);
             case JSON -> new JsonReporter(pomPath.toString(), Instant.now());
-            case MD -> new MarkdownReporter();
+            case MD -> new MarkdownReporter(showAdvisory, showUnresolved);
         };
-        reporter.report(findings, writer);
+        reporter.report(report, writer);
         writer.flush();
 
         // Slack alert — CLI flag takes precedence over config; no-op when webhook is blank
@@ -179,30 +189,6 @@ public class ScanCommand implements Callable<Integer> {
                 config.getNotifications().getSlack().getMinLevel(), Severity.RED);
         new SlackNotifier().notify(findings, effectiveWebhook, slackMinLevel);
 
-        return CliHelper.computeExitCode(findings, threshold, failOn);
-    }
-
-    // Fallback reporter used until Block 3/4 reporters were implemented — kept for completeness.
-    static class PlainTextReporter implements Reporter {
-
-        @Override
-        public void report(List<Finding> findings, PrintWriter out) {
-            long flagged = findings.stream()
-                    .filter(f -> !f.isUnresolved() && f.riskLevel() != Severity.GREEN).count();
-            long unresolved = findings.stream().filter(Finding::isUnresolved).count();
-            out.printf("marshal scan — %d dependencies%n", findings.size());
-            if (unresolved > 0) {
-                out.printf("  %d could not be fully resolved — manual review recommended%n", unresolved);
-            }
-            findings.stream()
-                    .filter(f -> !f.isUnresolved() && f.riskLevel() != Severity.GREEN)
-                    .sorted(Comparator.comparingInt(Finding::riskScore).reversed())
-                    .forEach(f -> {
-                        String from = f.fromVersion() != null ? f.fromVersion() + " → " : "";
-                        out.printf("  [%s %d/100] %s %s%s%n",
-                                f.riskLevel(), f.riskScore(), f.coordinates().toGa(), from, f.toVersion());
-                    });
-            out.printf("Summary: %d flagged%n", flagged);
-        }
+        return CliHelper.computeExitCode(report, threshold, failOn);
     }
 }

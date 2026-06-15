@@ -1,11 +1,13 @@
 package dev.marshalhq.cli;
 
-import dev.marshalhq.core.Finding;
-
 import java.io.PrintWriter;
-import java.util.List;
 
+/**
+ * Renders an already-classified {@link ScanReport} to a specific surface.
+ * Reporters format; they do not classify. The buckets and counts they print
+ * come from the shared {@link ScanReport}, never from re-filtering findings.
+ */
 public interface Reporter {
 
-    void report(List<Finding> findings, PrintWriter out);
+    void report(ScanReport report, PrintWriter out);
 }

@@ -44,7 +44,7 @@ class TerminalReporterTest {
 
     private String render(List<Finding> findings) {
         StringWriter sw = new StringWriter();
-        reporter.report(findings, new PrintWriter(sw));
+        reporter.report(ScanReport.from(findings), new PrintWriter(sw));
         return sw.toString();
     }
 
@@ -83,12 +83,25 @@ class TerminalReporterTest {
     }
 
     @Test
-    void yellowFinding_rendersYellowBadge() {
+    void yellowFinding_notRenderedInDetailByDefault_shownAsAdvisoryCount() {
         Finding yellow = finding("com.example:yet-lib", "0.1.0", "0.2.0", 34, Severity.YELLOW);
         String out = render(List.of(yellow));
 
-        assertThat(out).contains("● YELLOW");
-        assertThat(out).contains("34/100");
+        // Advisory (YELLOW) is a summary count by default, never a detail row.
+        assertThat(out).doesNotContain("● YELLOW");
+        assertThat(out).doesNotContain("34/100");
+        assertThat(out).contains("1 advisory");
+    }
+
+    @Test
+    void yellowFinding_renderedInDetail_whenShowAdvisoryEnabled() {
+        TerminalReporter showAdv = new TerminalReporter(WIDTH, true);
+        Finding yellow = finding("com.example:yet-lib", "0.1.0", "0.2.0", 34, Severity.YELLOW);
+        StringWriter sw = new StringWriter();
+        showAdv.report(ScanReport.from(List.of(yellow)), new PrintWriter(sw));
+
+        assertThat(sw.toString()).contains("● YELLOW");
+        assertThat(sw.toString()).contains("34/100");
     }
 
     @Test
@@ -112,8 +125,10 @@ class TerminalReporterTest {
 
         int posRed = out.indexOf("● RED");
         int posOrange = out.indexOf("● ORANGE");
-        int posYellow = out.indexOf("● YELLOW");
-        assertThat(posRed).isLessThan(posOrange).isLessThan(posYellow);
+        assertThat(posRed).isLessThan(posOrange);
+        // YELLOW is advisory — a summary count, not a detail row.
+        assertThat(out).doesNotContain("● YELLOW");
+        assertThat(out).contains("1 advisory");
     }
 
     @Test
@@ -155,6 +170,27 @@ class TerminalReporterTest {
     }
 
     @Test
+    void unresolvedDeps_notListedByDefault() {
+        Finding unres = unresolved("com.example:private-lib");
+        String out = render(List.of(unres));
+
+        assertThat(out).contains("could not be fully resolved");
+        // GA name must not appear as a list item without the flag
+        assertThat(out).doesNotContain("· com.example:private-lib");
+    }
+
+    @Test
+    void unresolvedDeps_listedWhenShowUnresolvedEnabled() {
+        TerminalReporter showUnres = new TerminalReporter(WIDTH, false, true);
+        Finding unres = unresolved("com.example:private-lib");
+        StringWriter sw = new StringWriter();
+        showUnres.report(ScanReport.from(List.of(unres)), new PrintWriter(sw));
+
+        assertThat(sw.toString()).contains("could not be fully resolved");
+        assertThat(sw.toString()).contains("· com.example:private-lib");
+    }
+
+    @Test
     void unknownMetadata_surfacesIncompleteMetadataNotice() {
         Finding green = finding("com.example:a", null, "1.0", 0, Severity.GREEN);
         Finding unknown = findingWithUnknown("com.example:b", "2.0");
@@ -176,13 +212,13 @@ class TerminalReporterTest {
 
     @Test
     void evidenceLinesAppearsIndentedBelowFindingRow() {
-        RuleResult sig = new RuleResult(35, Severity.ORANGE,
+        RuleResult sig = new RuleResult(55, Severity.ORANGE,
                 "Publisher signing key changed from [AAAA] to [BBBB]", "NEW-MAINTAINER");
         Finding f = findingWithSignals("com.example:risky-lib", "1.0.0", "2.0.0",
-                35, Severity.YELLOW, List.of(sig));
+                55, Severity.ORANGE, List.of(sig));
         String out = render(List.of(f));
 
-        int badgePos = out.indexOf("● YELLOW");
+        int badgePos = out.indexOf("● ORANGE");
         int arrowPos = out.indexOf("↳");
         assertThat(arrowPos).isGreaterThan(badgePos);
         assertThat(out).contains("NEW-MAINTAINER");
@@ -191,10 +227,12 @@ class TerminalReporterTest {
 
     @Test
     void signalWithBlankEvidence_notRendered() {
-        RuleResult sig = new RuleResult(10, Severity.YELLOW, "", "SOME-RULE");
-        Finding f = findingWithSignals("com.example:lib", "1.0", "2.0", 10, Severity.YELLOW, List.of(sig));
+        RuleResult sig = new RuleResult(55, Severity.ORANGE, "", "SOME-RULE");
+        Finding f = findingWithSignals("com.example:lib", "1.0", "2.0", 55, Severity.ORANGE, List.of(sig));
         String out = render(List.of(f));
 
+        // The finding row renders, but a blank-evidence signal must not produce a ↳ line.
+        assertThat(out).contains("● ORANGE");
         assertThat(out).doesNotContain("↳");
     }
 

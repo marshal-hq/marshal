@@ -46,6 +46,7 @@ dependencies {
 
 tasks.jar {
     manifest { attributes["Main-Class"] = "dev.marshalhq.cli.MarshalCli" }
+    archiveClassifier.set("thin")
 }
 
 tasks.shadowJar {

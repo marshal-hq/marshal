@@ -1,5 +1,8 @@
 package dev.marshalhq.resolvers;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -73,7 +76,7 @@ public class PomDependencyResolver {
             // Validation errors (e.g. missing version) produce a partial model that is still usable.
             if (e.getResult() != null && e.getResult().getEffectiveModel() != null) {
                 model = e.getResult().getEffectiveModel();
-                log.error("Model building problems for {}: {}", pomPath, e.getMessage());
+                log.debug("Non-fatal model building problems for {}: {}", pomPath, e.getMessage());
             }
             else {
                 log.error("Failed to resolve dependencies from {}: {}", pomPath, e.getMessage());
@@ -91,6 +94,21 @@ public class PomDependencyResolver {
             }
             result.add(new Coordinates(dep.getGroupId(), dep.getArtifactId(), effectiveVersion(dep)));
         }
+
+        // For BOM/parent POMs (packaging=pom), the dependencyManagement section IS the
+        // dependency declaration — scan it too, skipping BOM imports (scope=import, type=pom).
+        if ("pom".equals(model.getPackaging()) && model.getDependencyManagement() != null) {
+            for (Dependency dep : model.getDependencyManagement().getDependencies()) {
+                if ("import".equals(dep.getScope()) && "pom".equals(dep.getType())) {
+                    continue;
+                }
+                if (!isIncludedScope(dep.getScope())) {
+                    continue;
+                }
+                result.add(new Coordinates(dep.getGroupId(), dep.getArtifactId(), effectiveVersion(dep)));
+            }
+        }
+
         return result;
     }
 
@@ -146,7 +164,31 @@ public class PomDependencyResolver {
 
         @Override
         public ModelSource resolveModel(Parent parent) throws UnresolvableModelException {
-            return resolveModel(parent.getGroupId(), parent.getArtifactId(), parent.getVersion());
+            try {
+                return resolveModel(parent.getGroupId(), parent.getArtifactId(), parent.getVersion());
+            } catch (UnresolvableModelException e) {
+                log.debug("Parent {}:{}:{} not resolvable, continuing without it",
+                        parent.getGroupId(), parent.getArtifactId(), parent.getVersion());
+                return stubPomSource(parent.getGroupId(), parent.getArtifactId());
+            }
+        }
+
+        private static ModelSource stubPomSource(String groupId, String artifactId) {
+            String xml = "<?xml version=\"1.0\"?><project><modelVersion>4.0.0</modelVersion>"
+                    + "<groupId>" + groupId + "</groupId>"
+                    + "<artifactId>" + artifactId + "</artifactId>"
+                    + "<version>STUB</version></project>";
+            byte[] bytes = xml.getBytes(StandardCharsets.UTF_8);
+            return new ModelSource() {
+                @Override
+                public InputStream getInputStream() {
+                    return new ByteArrayInputStream(bytes);
+                }
+                @Override
+                public String getLocation() {
+                    return groupId + ":" + artifactId + ":STUB";
+                }
+            };
         }
 
         @Override

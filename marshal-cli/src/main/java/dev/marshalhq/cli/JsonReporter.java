@@ -1,5 +1,11 @@
 package dev.marshalhq.cli;
 
+import java.io.PrintWriter;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -7,12 +13,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import dev.marshalhq.core.Finding;
 import dev.marshalhq.core.Severity;
-
-import java.io.PrintWriter;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.List;
 
 /**
  * JSON reporter. Matches marshal_02 schema v1.0 exactly — field names and types
@@ -39,14 +39,14 @@ public class JsonReporter implements Reporter {
     }
 
     @Override
-    public void report(List<Finding> findings, PrintWriter out) {
+    public void report(ScanReport report, PrintWriter out) {
         try {
             ObjectNode root = MAPPER.createObjectNode();
             root.put("schema", "1.0");
             root.put("scanned_at", ISO_UTC.format(scannedAt));
             root.put("project", project);
-            root.set("summary", buildSummary(findings));
-            root.set("findings", buildFindings(findings));
+            root.set("summary", buildSummary(report));
+            root.set("findings", buildFindings(report.all()));
 
             out.println(MAPPER.writeValueAsString(root));
         }
@@ -57,21 +57,16 @@ public class JsonReporter implements Reporter {
 
     // ── summary ──────────────────────────────────────────────────────────────────
 
-    private ObjectNode buildSummary(List<Finding> findings) {
-        long red = count(findings, Severity.RED);
-        long orange = count(findings, Severity.ORANGE);
-        long yellow = count(findings, Severity.YELLOW);
-        long green = count(findings, Severity.GREEN);
-
+    private ObjectNode buildSummary(ScanReport report) {
         ObjectNode dist = MAPPER.createObjectNode();
-        dist.put("red", (int) red);
-        dist.put("orange", (int) orange);
-        dist.put("yellow", (int) yellow);
-        dist.put("green", (int) green);
+        dist.put("red", (int) report.count(Severity.RED));
+        dist.put("orange", (int) report.count(Severity.ORANGE));
+        dist.put("yellow", (int) report.count(Severity.YELLOW));
+        dist.put("green", (int) report.count(Severity.GREEN));
 
         ObjectNode summary = MAPPER.createObjectNode();
-        summary.put("total_dependencies", findings.size());
-        summary.put("flagged", (int) (red + orange));
+        summary.put("total_dependencies", report.total());
+        summary.put("flagged", report.flaggedCount());
         summary.set("risk_distribution", dist);
         return summary;
     }
@@ -108,13 +103,5 @@ public class JsonReporter implements Reporter {
             arr.add(node);
         }
         return arr;
-    }
-
-    // ── helpers ───────────────────────────────────────────────────────────────────
-
-    private static long count(List<Finding> findings, Severity level) {
-        return findings.stream()
-                .filter(f -> !f.isUnresolved() && f.riskLevel() == level)
-                .count();
     }
 }

@@ -14,7 +14,9 @@ import org.mockito.quality.Strictness;
 
 import picocli.CommandLine;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -222,6 +224,59 @@ class ScanCommandTest {
         int exit = run(new ScanCommand(mockClient, mockResolver),
                 "--pom", tempDir.resolve("pom.xml").toString());
         assertThat(exit).isEqualTo(0);
+    }
+
+    @Test
+    void internalPackage_notFoundOnRegistry_scoresZeroWithNoMissingSig() throws Exception {
+        Coordinates fakeLib = new Coordinates("com.internal.fake", "fake-lib", "1.0.0");
+
+        when(mockResolver.resolve(any())).thenReturn(List.of(fakeLib));
+        // Empty list = package not in the registry; fetchMetadata must never be called.
+        when(mockClient.getVersionHistory("com.internal.fake", "fake-lib")).thenReturn(List.of());
+
+        PrintStream origOut = System.out;
+        ByteArrayOutputStream outBytes = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(outBytes));
+        try {
+            run(new ScanCommand(mockClient, mockResolver),
+                    "--pom", tempDir.resolve("pom.xml").toString(),
+                    "--output", "JSON");
+        } finally {
+            System.setOut(origOut);
+        }
+
+        // Packages absent from the registry must never be fetched
+        verify(mockClient, never()).fetchMetadata(any());
+
+        String json = outBytes.toString();
+        assertThat(json).contains("\"com.internal.fake:fake-lib\"");
+        assertThat(json).containsPattern("\"risk_score\"\\s*:\\s*0");
+        assertThat(json).doesNotContain("MISSING-SIG");
+    }
+
+    @Test
+    void markdownOutput_greenDepOnly_doesNotContainSafeSection() {
+        Coordinates commonsIo     = new Coordinates("commons-io", "commons-io", "2.20.0");
+        Coordinates commonsIoPrev = new Coordinates("commons-io", "commons-io", "2.19.0");
+
+        when(mockResolver.resolve(any())).thenReturn(List.of(commonsIo));
+        when(mockClient.getVersionHistory("commons-io", "commons-io"))
+                .thenReturn(List.of("2.20.0", "2.19.0"));
+        when(mockClient.fetchMetadata(commonsIo)).thenReturn(signedMeta(commonsIo));
+        when(mockClient.fetchMetadata(commonsIoPrev)).thenReturn(signedMeta(commonsIoPrev));
+
+        java.io.PrintStream origOut = System.out;
+        java.io.ByteArrayOutputStream outBytes = new java.io.ByteArrayOutputStream();
+        System.setOut(new java.io.PrintStream(outBytes));
+        try {
+            run(new ScanCommand(mockClient, mockResolver),
+                    "--pom", tempDir.resolve("pom.xml").toString(),
+                    "--output", "MD");
+        } finally {
+            System.setOut(origOut);
+        }
+
+        assertThat(outBytes.toString()).doesNotContain("### 🟢 SAFE");
     }
 
     @Test

@@ -48,7 +48,7 @@ class MarkdownReporterTest {
     @Test
     void summaryLine_noFindings() {
         String md = reporter.render(List.of());
-        assertThat(md).contains("**0 updates — 0 flagged**");
+        assertThat(md).contains("**0 dependencies — 0 flagged, 0 safe**");
     }
 
     @Test
@@ -60,8 +60,8 @@ class MarkdownReporterTest {
         Finding green = finding("e:f", null, "1.0", 4, Severity.GREEN, List.of());
 
         String md = reporter.render(List.of(red, orange, green));
-        // visible = red + orange + green = 3, flagged = 2, no advisory
-        assertThat(md).contains("**3 updates — 2 flagged**");
+        // total = 3, flagged = red + orange = 2, no advisory, 1 safe
+        assertThat(md).contains("**3 dependencies — 2 flagged, 1 safe**");
     }
 
     @Test
@@ -153,20 +153,12 @@ class MarkdownReporterTest {
     // ── GREEN finding ─────────────────────────────────────────────────────────────
 
     @Test
-    void greenFinding_safeOneLiner() {
+    void greenFinding_excludedFromOutput() {
         Finding green = finding("org.apache.commons:commons-lang3", "3.12.0", "3.13.0",
                 4, Severity.GREEN, List.of());
         String md = reporter.render(List.of(green));
-        assertThat(md).contains(
-                "### 🟢 SAFE — org.apache.commons:commons-lang3 `3.12.0 → 3.13.0`");
-        assertThat(md).contains("No behavioral anomalies detected.");
-    }
-
-    @Test
-    void greenFinding_noSignalTable() {
-        Finding green = finding("a:b", "1.0", "2.0", 4, Severity.GREEN, List.of());
-        String md = reporter.render(List.of(green));
-        assertThat(md).doesNotContain("| Signal | Detail |");
+        assertThat(md).doesNotContain("### 🟢 SAFE");
+        assertThat(md).doesNotContain("commons-lang3");
     }
 
     // ── YELLOW exclusion ──────────────────────────────────────────────────────────
@@ -201,21 +193,40 @@ class MarkdownReporterTest {
 
         String md = reporter.render(List.of(unresolved, green));
 
-        // unresolved must not appear anywhere in the output
+        // the unresolved dep is not rendered as a finding (no package GA / version leak)
         assertThat(md).doesNotContain("lib-x");
-        assertThat(md).doesNotContain("UNRESOLVED");
-        // only the green dep is SAFE
-        assertThat(md).contains("### 🟢 SAFE — a:b");
-        // the visible count must be 1 (unresolved excluded); if the !isUnresolved() filter
-        // is mutated away visible.size()=2 → summary would say "2 updates" not "1 update"
-        assertThat(md).contains("**1 update — 0 flagged**");
+        // green dep must not appear as a finding section
+        assertThat(md).doesNotContain("### 🟢 SAFE");
+        assertThat(md).doesNotContain("a:b");
+        // total = 2 (both counted), flagged 0, 1 safe; unresolved surfaced in its own note
+        assertThat(md).contains("**2 dependencies — 0 flagged, 1 safe**");
+        assertThat(md).contains("could not be fully resolved");
+    }
+
+    @Test
+    void unresolvedFinding_listedWhenShowUnresolvedEnabled() {
+        MarkdownReporter showUnres = new MarkdownReporter(false, true);
+        Finding unresolved = Finding.unresolved(new Coordinates("com.example", "private-lib", "UNRESOLVED"));
+        String md = showUnres.render(List.of(unresolved));
+
+        assertThat(md).contains("could not be fully resolved");
+        assertThat(md).contains("> - `com.example:private-lib`");
+    }
+
+    @Test
+    void unresolvedFinding_notListedByDefault() {
+        Finding unresolved = Finding.unresolved(new Coordinates("com.example", "private-lib", "UNRESOLVED"));
+        String md = reporter.render(List.of(unresolved));
+
+        assertThat(md).contains("could not be fully resolved");
+        assertThat(md).doesNotContain("> - `com.example:private-lib`");
     }
 
     @Test
     void report_writesToProvidedWriter() {
         Finding green = finding("a:b", null, "1.0", 4, Severity.GREEN, List.of());
         StringWriter sw = new StringWriter();
-        reporter.report(List.of(green), new PrintWriter(sw));
+        reporter.report(ScanReport.from(List.of(green)), new PrintWriter(sw));
         assertThat(sw.toString()).contains("<!-- marshal-bot -->");
     }
 

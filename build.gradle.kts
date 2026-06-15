@@ -21,5 +21,22 @@ subprojects {
         "testImplementation"("org.mockito:mockito-junit-jupiter:5.11.0")
         "testRuntimeOnly"("org.junit.platform:junit-platform-launcher:1.10.2")
     }
-    tasks.named<Test>("test") { useJUnitPlatform() }
+    tasks.named<Test>("test") {
+        useJUnitPlatform()
+        enabled = !project.hasProperty("skipTests")
+    }
 }
+
+// ── dist ─────────────────────────────────────────────────────────────────────
+// Copies the runnable shadowJar to dist/ in the project root after every build.
+val distDir = layout.projectDirectory.dir("dist")
+
+val dist by tasks.registering(Copy::class) {
+    group = "distribution"
+    description = "Copies the marshal-cli fat JAR to dist/"
+    dependsOn(":marshal-cli:shadowJar")
+    from(project(":marshal-cli").tasks.named("shadowJar"))
+    into(distDir)
+}
+
+tasks.named("build") { finalizedBy(dist) }

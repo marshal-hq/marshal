@@ -42,7 +42,7 @@ class JsonReporterTest {
 
     private JsonNode render(List<Finding> findings) throws Exception {
         StringWriter sw = new StringWriter();
-        reporter.report(findings, new PrintWriter(sw));
+        reporter.report(ScanReport.from(findings), new PrintWriter(sw));
         return MAPPER.readTree(sw.toString());
     }
 
@@ -207,7 +207,7 @@ class JsonReporterTest {
                 unresolved("e:f")
         );
         StringWriter sw = new StringWriter();
-        reporter.report(findings, new PrintWriter(sw));
+        reporter.report(ScanReport.from(findings), new PrintWriter(sw));
         // If this doesn't throw, the JSON is valid
         assertThat(MAPPER.readTree(sw.toString())).isNotNull();
     }

@@ -57,6 +57,12 @@ public class DiffCommand implements Callable<Integer> {
             converter = CaseInsensitiveConverter.ForFailOn.class)
     FailOn failOn = FailOn.FAIL;
 
+    @Option(names = "--show-advisory", description = "Render YELLOW advisory findings in full detail (default: count only)")
+    boolean showAdvisory = false;
+
+    @Option(names = "--show-unresolved", description = "List each unresolved dependency by name (default: count only)")
+    boolean showUnresolved = false;
+
     @Option(names = "--config", description = "Path to marshal.yml config file")
     Path configPath;
 
@@ -166,13 +172,14 @@ public class DiffCommand implements Callable<Integer> {
         }
 
         // Report
+        ScanReport report = ScanReport.from(findings);
         PrintWriter writer = new PrintWriter(System.out, true);
         Reporter reporter = switch (outputFormat) {
-            case HUMAN -> new TerminalReporter();
+            case HUMAN -> new TerminalReporter(showAdvisory, showUnresolved);
             case JSON -> new JsonReporter(headPom.toString(), Instant.now());
-            case MD -> new MarkdownReporter();
+            case MD -> new MarkdownReporter(showAdvisory, showUnresolved);
         };
-        reporter.report(findings, writer);
+        reporter.report(report, writer);
         writer.flush();
 
         String effectiveWebhook = !slackWebhookFlag.isBlank()
@@ -182,7 +189,7 @@ public class DiffCommand implements Callable<Integer> {
                 config.getNotifications().getSlack().getMinLevel(), Severity.RED);
         new SlackNotifier().notify(findings, effectiveWebhook, slackMinLevel);
 
-        return CliHelper.computeExitCode(findings, threshold, failOn);
+        return CliHelper.computeExitCode(report, threshold, failOn);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────

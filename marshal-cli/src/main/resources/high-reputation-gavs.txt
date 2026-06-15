@@ -1,5 +1,6 @@
 # Top Maven Central artifacts — score scaled by 0.5x (high-reputation rule)
-# Format: groupId:artifactId  (no version)
+# Format: groupId:artifactId  (no version). A "groupId:*" wildcard tags a
+# whole vendor family at once.
 org.springframework:spring-core
 org.springframework:spring-context
 org.springframework:spring-beans
@@ -13,11 +14,21 @@ com.fasterxml.jackson.core:jackson-core
 com.fasterxml.jackson.core:jackson-databind
 com.fasterxml.jackson.core:jackson-annotations
 com.google.guava:guava
-org.apache.commons:commons-lang3
-org.apache.commons:commons-collections4
-org.apache.commons:commons-io
-commons-io:commons-io
-commons-lang:commons-lang
+# Apache Commons family — spec tags the whole family HIGH_REPUTATION.
+# Wildcards cover both the modern (org.apache.commons:*) and the legacy
+# single-segment groupIds (commons-io, commons-pool, …).
+org.apache.commons:*
+commons-io:*
+commons-lang:*
+commons-collections:*
+commons-pool:*
+commons-codec:*
+commons-logging:*
+commons-cli:*
+commons-beanutils:*
+commons-configuration:*
+commons-validator:*
+commons-digester:*
 org.slf4j:slf4j-api
 ch.qos.logback:logback-core
 ch.qos.logback:logback-classic
