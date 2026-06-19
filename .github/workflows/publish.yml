@@ -40,7 +40,7 @@ jobs:
           fi
 
       - name: Build shadow JAR
-        run: ./gradlew :marshal-cli:shadowJar --no-daemon
+        run: ./gradlew :marshal-cli:shadowJar --no-daemon -Pversion=${{ steps.ver.outputs.version }}
 
       - name: Stage release asset
         run: |

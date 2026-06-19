@@ -4,7 +4,11 @@ plugins {
 
 allprojects {
     group = "dev.marshalhq"
-    version = "0.1.0-SNAPSHOT"
+    version = if (project.hasProperty("version") && project.property("version") != "unspecified") {
+        project.property("version") as String
+    } else {
+        "0.1.0-SNAPSHOT"
+    }
     repositories { mavenCentral() }
 }
 
