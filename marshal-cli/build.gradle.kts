@@ -45,7 +45,12 @@ dependencies {
 }
 
 tasks.jar {
-    manifest { attributes["Main-Class"] = "dev.marshalhq.cli.MarshalCli" }
+    manifest {
+        attributes(
+            "Main-Class" to "dev.marshalhq.cli.MarshalCli",
+            "Implementation-Version" to project.version.toString(),
+        )
+    }
     archiveClassifier.set("thin")
 }
 
@@ -53,6 +58,12 @@ tasks.shadowJar {
     archiveBaseName.set("marshal-cli")
     archiveClassifier.set("")
     archiveVersion.set(project.version.toString())
+    manifest {
+        attributes(
+            "Main-Class" to "dev.marshalhq.cli.MarshalCli",
+            "Implementation-Version" to project.version.toString(),
+        )
+    }
 }
 
 pitest {
