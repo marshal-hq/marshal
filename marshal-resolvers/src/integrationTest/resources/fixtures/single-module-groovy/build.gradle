@@ -1,0 +1,13 @@
+// Baseline single-module Groovy DSL resolution.
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.google.guava:guava:33.0.0-jre'
+    implementation 'org.apache.commons:commons-lang3:3.14.0'
+}

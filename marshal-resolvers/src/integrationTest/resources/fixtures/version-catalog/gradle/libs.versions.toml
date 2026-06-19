@@ -1,0 +1,7 @@
+# A version catalog. The init script reads the resolved graph, so it never
+# sees the alias; it must emit the catalog-pinned concrete GAV.
+[versions]
+guava = "33.0.0-jre"
+
+[libraries]
+guava = { module = "com.google.guava:guava", version.ref = "guava" }

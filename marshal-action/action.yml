@@ -1,5 +1,5 @@
 name: 'Marshal Dependency Analysis'
-description: 'Behavioral supply-chain security scanner for JVM dependencies'
+description: 'Behavioral supply-chain security scanner for JVM dependencies (Maven & Gradle)'
 author: 'Marshal (marshalhq.dev)'
 
 branding:
@@ -7,28 +7,74 @@ branding:
   color: 'orange'
 
 inputs:
+  path:
+    description: 'Path to a build file (pom.xml / build.gradle(.kts)) or a project directory, relative to the repo root.'
+    default: '.'
   pom-path:
-    description: 'Path to pom.xml'
-    default: 'pom.xml'
-  threshold:
-    description: 'Risk level that fails the check (green/yellow/orange/red)'
-    default: 'red'
-  comment-on-pr:
-    description: 'Post a risk summary comment on the PR'
-    default: 'true'
-  fail-on:
-    description: 'Exit code behavior: fail, warn, never'
-    default: 'fail'
-  slack-webhook:
-    description: 'Slack webhook URL for critical alerts'
+    description: 'DEPRECATED — alias for `path`, kept for backward compatibility.'
     required: false
+  threshold:
+    description: 'Minimum risk level that fails the check (green/yellow/orange/red).'
+    default: 'red'
+  fail-on:
+    description: 'Exit behavior when threshold is breached: fail, warn, never. (Exit 3 / could-not-analyze always fails the check.)'
+    default: 'fail'
+  comment-on-pr:
+    description: 'Post (or update) a risk summary comment on the pull request.'
+    default: 'true'
+  slack-webhook:
+    description: 'Slack incoming webhook URL. Sends an alert when RED findings are detected.'
+    required: false
+  marshal-version:
+    description: 'Marshal release to run (a release tag on the marshal-repo, without the leading v).'
+    default: '0.1.0'
+  marshal-repo:
+    description: 'Repository that hosts the Marshal release assets.'
+    default: 'marshal-hq/marshal'
 
 runs:
-  using: 'docker'
-  image: 'docker://ghcr.io/marshal-hq/marshal-action:0.1.0'
-  env:
-    INPUT_POM_PATH: ${{ inputs.pom-path }}
-    INPUT_THRESHOLD: ${{ inputs.threshold }}
-    INPUT_COMMENT_ON_PR: ${{ inputs.comment-on-pr }}
-    INPUT_FAIL_ON: ${{ inputs.fail-on }}
-    INPUT_SLACK_WEBHOOK: ${{ inputs.slack-webhook }}
+  using: 'composite'
+  steps:
+    # Two JDKs coexist (§3.3): the project's build toolchain for ./gradlew, and Java
+    # 21 to run the Marshal jar. We never touch the user's JAVA_HOME.
+    - name: Detect a pre-installed Java 21
+      id: detect-java
+      shell: bash
+      run: |
+        if [ -n "${JAVA_HOME_21_X64:-}" ] || [ -n "${JAVA_HOME_21_ARM64:-}" ]; then
+          echo "needs-setup=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "needs-setup=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    # Self-hosted fallback only: hosted runners expose JAVA_HOME_21_* already (§3.3).
+    - name: Provision Java 21 for Marshal (self-hosted fallback)
+      if: steps.detect-java.outputs.needs-setup == 'true'
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+
+    - name: Download Marshal jar
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        JAR="${RUNNER_TEMP}/marshal.jar"
+        gh release download "v${{ inputs.marshal-version }}" \
+          --repo "${{ inputs.marshal-repo }}" \
+          --pattern "marshal-cli-${{ inputs.marshal-version }}.jar" \
+          --output "${JAR}" --clobber
+        echo "MARSHAL_JAR=${JAR}" >> "$GITHUB_ENV"
+
+    - name: Run Marshal
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        INPUT_PATH: ${{ inputs.pom-path != '' && inputs.pom-path || inputs.path }}
+        INPUT_THRESHOLD: ${{ inputs.threshold }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_COMMENT_ON_PR: ${{ inputs.comment-on-pr }}
+        INPUT_SLACK_WEBHOOK: ${{ inputs.slack-webhook }}
+      run: bash "${{ github.action_path }}/run.sh"

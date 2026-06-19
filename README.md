@@ -6,14 +6,14 @@ Marshal watches how packages change on Maven Central and scores every update
 on a 0–100 risk scale. A maintainer swap, a dropped GPG signature, a sudden
 jump in dependency count: these show up the day a version is published, long
 before a CVE exists. Risky updates fail your PR check with a clear reason.
-It's built for Java teams on Maven that auto-merge dependency updates and
-want a way to catch the bad ones before they hit the build.
+It's built for Java teams on Maven or Gradle that auto-merge dependency
+updates and want a way to catch the bad ones before they hit the build.
 
 ![PR comment showing Marshal findings](docs/images/pr-comment.png)
 
 ![Marshal demo](docs/images/demo.gif)
 
-*javax.activation:activation scores ORANGE 55/100 — GPG signature dropped between versions.*
+*javax.activation:activation scores ORANGE 55/100: GPG signature dropped between versions.*
 
 ## Quick start
 
@@ -27,7 +27,7 @@ name: Marshal
 
 on:
   pull_request:
-    paths: ['pom.xml']
+    paths: ['**/pom.xml', '**/build.gradle', '**/build.gradle.kts']
 
 jobs:
   marshal:
@@ -37,14 +37,17 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # required: the PR base is built and diffed
+      # Gradle projects only: provide the build toolchain for ./gradlew:
+      # - uses: actions/setup-java@v4
+      #   with: { distribution: temurin, java-version: '17' }
       - name: Marshal scan
         uses: marshal-hq/marshal/marshal-action@v0.1.0
         with:
-          pom-path: pom.xml
+          path: '.'        # a build file or project dir (Maven or Gradle)
           threshold: red
           fail-on: fail
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 Or run the CLI directly:
@@ -54,22 +57,38 @@ Or run the CLI directly:
 curl -fsSL https://github.com/marshal-hq/marshal/releases/download/v0.1.0/marshal-cli-0.1.0.jar \
   -o marshal.jar
 
-# Scan a project
+# Scan a Maven project
 java -jar marshal.jar scan --pom pom.xml
+
+# Scan a Gradle project (Marshal runs your ./gradlew)
+java -jar marshal.jar scan --build-file build.gradle.kts
 ```
 
 ## Using Marshal
 
 **On a pull request (recommended).** Add the workflow above. On every PR that
-touches `pom.xml`, Marshal scans the dependency changes and posts a comment
-with any findings. Set `fail-on: fail` with `threshold: red` to block merges
-on critical findings, or set `fail-on: never` to comment without blocking.
-Safe updates pass silently.
+touches a `pom.xml` or `build.gradle(.kts)`, Marshal detects the build tool,
+scans the dependency changes, and posts a comment with any findings. Set
+`fail-on: fail` with `threshold: red` to block merges on critical findings, or
+set `fail-on: never` to comment without blocking. Safe updates pass silently.
 
-**Locally, before you commit.** Scan any project from the command line:
+If Marshal cannot resolve your dependencies, for example because the build
+fails, the check fails rather than passing silently. A scanner that cannot
+analyze your project should not report it as clean.
+
+**Locally, before you commit.** Scan any project from the command line. Point
+Marshal at a Maven pom or a Gradle build file:
 
 ```bash
-java -jar marshal.jar scan --pom pom.xml
+java -jar marshal.jar scan --pom pom.xml             # Maven
+java -jar marshal.jar scan --build-file build.gradle.kts   # Gradle
+```
+
+`marshal diff` compares two states and reports only the new risk, which is what
+the PR check runs. It works the same way for both build tools:
+
+```bash
+java -jar marshal.jar diff --base old/build.gradle.kts --head build.gradle.kts
 ```
 
 Pick an output format depending on where the result goes:
@@ -82,6 +101,17 @@ java -jar marshal.jar scan --pom pom.xml --output md      # markdown, e.g. for P
 
 Marshal exits with a non-zero code when a finding reaches your `fail-on`
 threshold, so it drops into any CI pipeline, not just GitHub Actions.
+
+### Build tool support
+
+Marshal supports JVM projects built with Maven or Gradle: Spring Boot, Spring,
+and plain JVM libraries. Android (AGP) and Kotlin Multiplatform are not
+supported in v1, because they use build configurations Marshal does not yet
+read.
+
+For Gradle, Marshal runs your project's Gradle wrapper, so it works with the
+Gradle version your project already uses. The resolver is verified against
+Gradle 8.5 and later. Gradle 7.x is not yet covered by our tests.
 
 ## What it catches
 
@@ -171,17 +201,16 @@ fire when findings reach or exceed `min-level`.
 ## Status
 
 Marshal is in early development (v0.1.0). The detection engine covers Maven
-Central with 7 behavioral rules. Gradle is coming soon, with npm and PyPI
-after that.
+Central with 7 behavioral rules. Maven and Gradle are both supported now, with
+npm and PyPI after that.
 
 What works:
-- CLI scanning of Maven (pom.xml) projects
-- GitHub Action with PR comments
+- CLI scanning of Maven (pom.xml) and Gradle (build.gradle, build.gradle.kts) projects
+- GitHub Action with PR comments and build tool auto-detection
 - Risk scoring with configurable thresholds
 - Slack alerts on critical findings
 
 What's next:
-- Gradle build file support (build.gradle, build.gradle.kts) — coming soon
 - Transitive dependency resolution (currently direct deps only)
 - npm ecosystem support
 - PyPI ecosystem support

@@ -90,13 +90,13 @@ class PomDependencyResolverIntegrationTest {
     }
 
     @Test
-    void doesNotCrashOnMalformedPom() {
+    void throwsResolutionExceptionOnUnparseablePom() {
+        // Total parse failure → "could not analyze" (ResolutionException), never empty clean (S06).
         Path pom = fixture("malformed-pom.xml");
 
-        assertThatNoException().isThrownBy(() -> {
-            List<Coordinates> deps = resolver.resolve(pom);
-            assertThat(deps).isEmpty();
-        });
+        assertThatThrownBy(() -> resolver.resolve(pom))
+                .isInstanceOf(ResolutionException.class)
+                .hasMessageContaining("could not resolve dependencies");
     }
 
     @Test

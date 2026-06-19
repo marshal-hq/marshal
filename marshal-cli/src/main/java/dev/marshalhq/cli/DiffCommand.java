@@ -4,8 +4,8 @@ import dev.marshalhq.core.*;
 import dev.marshalhq.core.config.MarshalConfig;
 import dev.marshalhq.core.config.MarshalConfigLoader;
 import dev.marshalhq.registry.MavenCentralClient;
-import dev.marshalhq.resolvers.DependencyScope;
-import dev.marshalhq.resolvers.PomDependencyResolver;
+import dev.marshalhq.resolvers.DependencyResolver;
+import dev.marshalhq.resolvers.ResolutionException;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -19,7 +19,13 @@ import java.util.*;
 import java.util.concurrent.*;
 
 /**
- * marshal diff — compare two POM files and report only new dependency risks.
+ * marshal diff — compare two project states and report only new dependency risks.
+ * <p>
+ * Build-tool-agnostic: {@code --base} and {@code --head} each accept a path that is
+ * either a build file or a project directory, routed independently through
+ * {@link ResolverRouter} exactly like {@code scan}. The two sides may even use
+ * different build tools (e.g. Maven base, Gradle head) — the delta is computed at
+ * the coordinate level.
  * <p>
  * Classification:
  * ADDED          → dep in head only → evaluated (previous = null)
@@ -32,18 +38,24 @@ import java.util.concurrent.*;
  */
 @Command(
         name = "diff",
-        description = "Compare two POM files and report new dependency risks.",
+        description = "Compare two project states and report new dependency risks.",
         mixinStandardHelpOptions = true
 )
 public class DiffCommand implements Callable<Integer> {
 
     private static final Logger log = LoggerFactory.getLogger(DiffCommand.class);
 
-    @Option(names = "--base", description = "Path to the base pom.xml", required = true)
+    @Option(names = "--base", description = "Path to the base build file or project directory",
+            required = true)
     Path basePom;
 
-    @Option(names = "--head", description = "Path to the head pom.xml", required = true)
+    @Option(names = "--head", description = "Path to the head build file or project directory",
+            required = true)
     Path headPom;
+
+    @Option(names = "--no-daemon",
+            description = "Run Gradle with --no-daemon (one-shot/CI). Ignored for Maven.")
+    boolean noDaemon = false;
 
     @Option(names = "--output", description = "Output format: human, json, md (default: md)",
             converter = CaseInsensitiveConverter.ForOutputFormat.class)
@@ -74,7 +86,7 @@ public class DiffCommand implements Callable<Integer> {
     String slackWebhookFlag = "";
 
     private final MavenCentralClient injectedClient;
-    private final PomDependencyResolver injectedResolver;
+    private final DependencyResolver injectedResolver;
 
     public DiffCommand() {
         this.injectedClient = null;
@@ -82,9 +94,10 @@ public class DiffCommand implements Callable<Integer> {
     }
 
     /**
-     * Package-private: inject components for testing.
+     * Package-private: inject components for testing. The injected resolver is used
+     * for both sides.
      */
-    DiffCommand(MavenCentralClient client, PomDependencyResolver resolver) {
+    DiffCommand(MavenCentralClient client, DependencyResolver resolver) {
         this.injectedClient = client;
         this.injectedResolver = resolver;
     }
@@ -92,18 +105,39 @@ public class DiffCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         MarshalConfig config = MarshalConfigLoader.load(configPath);
-        PomDependencyResolver resolver = injectedResolver != null
-                ? injectedResolver : new PomDependencyResolver(
-                        DependencyScope.fromNames(config.getScan().getScopes()));
+        PrintWriter err = new PrintWriter(System.err, true);
+
+        // Route each side independently (file or directory; Maven or Gradle), exactly
+        // like scan. The two sides may use different build tools.
+        ResolverRouter.Routed baseRoute = resolveSide(basePom, config, err);
+        ResolverRouter.Routed headRoute = resolveSide(headPom, config, err);
+        if (baseRoute == null || headRoute == null) {
+            return 2;
+        }
+
         MavenCentralClient client = injectedClient != null
                 ? injectedClient : CliHelper.buildProductionClient(cachePath);
 
         RuleEngine engine = CliHelper.buildEngine();
         Set<String> highReps = CliHelper.loadHighReputationGAs();
 
-        // Resolve both POMs, keyed by GA
-        Map<String, Coordinates> baseMap = toGaMap(resolver.resolve(basePom));
-        Map<String, Coordinates> headMap = toGaMap(resolver.resolve(headPom));
+        // Honesty invariant (§2.4): if EITHER side fails to resolve, the diff is
+        // untrustworthy. Exit 3 — never diff against a partial/empty set, which would
+        // false-clean (head fails) or flag every head dep as new (base fails).
+        Map<String, Coordinates> baseMap;
+        try {
+            baseMap = toGaMap(baseRoute.resolver().resolve(baseRoute.target()));
+        } catch (ResolutionException e) {
+            err.println("marshal: could not resolve base for comparison: " + e.getMessage());
+            return 3;
+        }
+        Map<String, Coordinates> headMap;
+        try {
+            headMap = toGaMap(headRoute.resolver().resolve(headRoute.target()));
+        } catch (ResolutionException e) {
+            err.println("marshal: could not resolve head for comparison: " + e.getMessage());
+            return 3;
+        }
 
         // Classify
         List<Coordinates> added = new ArrayList<>();
@@ -193,6 +227,13 @@ public class DiffCommand implements Callable<Integer> {
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────
+
+    private ResolverRouter.Routed resolveSide(Path path, MarshalConfig config, PrintWriter err) {
+        if (injectedResolver != null) {
+            return new ResolverRouter.Routed(injectedResolver, path);
+        }
+        return ResolverRouter.forPath(path, config, noDaemon, err);
+    }
 
     private static Map<String, Coordinates> toGaMap(List<Coordinates> deps) {
         Map<String, Coordinates> map = new LinkedHashMap<>();

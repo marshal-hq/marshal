@@ -1,0 +1,86 @@
+// marshal-init.gradle
+//
+// Injected by Marshal via --init-script. Registers a `marshalDeps` task on the
+// root project that walks the resolved dependency graph of every subproject and
+// writes the full external-module set to a JSON file.
+//
+// Output path is passed by Marshal as a project property: -PmarshalOut=/abs/path.json
+// Test scopes are included only when Marshal passes -PmarshalIncludeTest=true (S05).
+//
+// Emits the RESOLVED version (post conflict resolution) — i.e. what actually lands
+// on the classpath. Project (module) components are skipped; only external modules
+// reach Maven Central downstream.
+
+import org.gradle.api.artifacts.result.ResolvedDependencyResult
+import org.gradle.api.artifacts.result.UnresolvedDependencyResult
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
+import org.gradle.api.artifacts.component.ModuleComponentSelector
+
+rootProject {
+    tasks.register("marshalDeps") {
+        doLast {
+            def outPath = rootProject.findProperty("marshalOut")
+            if (outPath == null) {
+                throw new GradleException("marshalOut property not set")
+            }
+
+            def scopes = ["compileClasspath", "runtimeClasspath"]
+            if (rootProject.findProperty("marshalIncludeTest") == "true") {
+                scopes += ["testCompileClasspath", "testRuntimeClasspath"]
+            }
+
+            def results = []
+            allprojects.each { proj ->
+                scopes.each { cfgName ->
+                    def cfg = proj.configurations.findByName(cfgName)
+                    if (cfg == null || !cfg.canBeResolved) {
+                        return
+                    }
+                    def rr = cfg.incoming.resolutionResult
+                    def directIds = rr.root.dependencies.findAll {
+                        it instanceof ResolvedDependencyResult
+                    }.collect { it.selected.id } as Set
+
+                    // Declared/transitive dependencies that could not be resolved are
+                    // emitted with an UNRESOLVED sentinel rather than silently dropped —
+                    // resolutionResult is lenient, so without this a missing dependency
+                    // would vanish and false-clean (parity with the Maven UNRESOLVED path).
+                    rr.allDependencies.each { dep ->
+                        if (dep instanceof UnresolvedDependencyResult
+                                && dep.attempted instanceof ModuleComponentSelector) {
+                            def sel = dep.attempted
+                            results << [
+                                group        : sel.group,
+                                name         : sel.module,
+                                version      : "UNRESOLVED",
+                                configuration: cfgName,
+                                project      : proj.path,
+                                direct       : false
+                            ]
+                        }
+                    }
+
+                    rr.allComponents.each { comp ->
+                        // Skip project (module) components; keep external modules only.
+                        if (comp.id instanceof ProjectComponentIdentifier) {
+                            return
+                        }
+                        def mv = comp.moduleVersion
+                        if (mv == null) {
+                            return
+                        }
+                        results << [
+                            group        : mv.group,
+                            name         : mv.name,
+                            version      : mv.version,
+                            configuration: cfgName,
+                            project      : proj.path,
+                            direct       : directIds.contains(comp.id)
+                        ]
+                    }
+                }
+            }
+            new File(outPath as String).text = groovy.json.JsonOutput.toJson(results)
+        }
+    }
+}

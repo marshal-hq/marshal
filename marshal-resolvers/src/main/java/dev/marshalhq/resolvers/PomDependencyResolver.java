@@ -39,7 +39,7 @@ import org.slf4j.LoggerFactory;
 
 import dev.marshalhq.core.Coordinates;
 
-public class PomDependencyResolver {
+public class PomDependencyResolver implements DependencyResolver {
 
     private static final Logger log = LoggerFactory.getLogger(PomDependencyResolver.class);
     private static final Set<DependencyScope> DEFAULT_SCOPES = EnumSet.of(DependencyScope.COMPILE, DependencyScope.RUNTIME);
@@ -63,6 +63,7 @@ public class PomDependencyResolver {
         this.repos = List.of(new RemoteRepository.Builder("central", "default", "https://repo1.maven.org/maven2/").build());
     }
 
+    @Override
     public List<Coordinates> resolve(Path pomPath) {
         Model model;
         try {
@@ -79,12 +80,16 @@ public class PomDependencyResolver {
                 log.debug("Non-fatal model building problems for {}: {}", pomPath, e.getMessage());
             }
             else {
-                log.error("Failed to resolve dependencies from {}: {}", pomPath, e.getMessage());
-                return List.of();
+                // Total failure — no usable model. NOT the same as a pom with zero deps (S06);
+                // partial models with unresolvable versions are handled below as UNRESOLVED.
+                throw new ResolutionException(
+                        "could not resolve dependencies for " + pomPath + ": " + e.getMessage());
             }
+        } catch (ResolutionException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Failed to resolve dependencies from {}: {}", pomPath, e.getMessage());
-            return List.of();
+            throw new ResolutionException(
+                    "could not resolve dependencies for " + pomPath + ": " + e.getMessage());
         }
 
         List<Coordinates> result = new ArrayList<>();

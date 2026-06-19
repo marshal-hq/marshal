@@ -264,7 +264,10 @@ class PomDependencyResolverTest {
     }
 
     @Test
-    void doesNotCrashOnMalformedPom(@TempDir Path tempDir) throws IOException {
+    void throwsResolutionExceptionOnUnparseablePom(@TempDir Path tempDir) throws IOException {
+        // A pom that cannot be parsed at all is total failure: it must surface as
+        // "could not analyze" (ResolutionException → CLI exit 3), never as an empty
+        // clean result (S06). Distinct from a pom with zero declared dependencies.
         Path pom = writePom(tempDir, """
             <?xml version="1.0" encoding="UTF-8"?>
             <project>
@@ -272,10 +275,9 @@ class PomDependencyResolverTest {
                 <groupId>com.example
             """);
 
-        assertThatNoException().isThrownBy(() -> {
-            List<Coordinates> deps = resolver.resolve(pom);
-            assertThat(deps).isEmpty();
-        });
+        assertThatThrownBy(() -> resolver.resolve(pom))
+                .isInstanceOf(ResolutionException.class)
+                .hasMessageContaining("could not resolve dependencies");
     }
 
     @Test

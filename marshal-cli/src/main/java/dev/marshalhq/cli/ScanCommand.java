@@ -1,6 +1,7 @@
 package dev.marshalhq.cli;
 
 import java.io.PrintWriter;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -26,8 +27,8 @@ import dev.marshalhq.core.VersionMetadata;
 import dev.marshalhq.core.config.MarshalConfig;
 import dev.marshalhq.core.config.MarshalConfigLoader;
 import dev.marshalhq.registry.MavenCentralClient;
-import dev.marshalhq.resolvers.DependencyScope;
-import dev.marshalhq.resolvers.PomDependencyResolver;
+import dev.marshalhq.resolvers.DependencyResolver;
+import dev.marshalhq.resolvers.ResolutionException;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -40,8 +41,16 @@ public class ScanCommand implements Callable<Integer> {
 
     private static final Logger log = LoggerFactory.getLogger(ScanCommand.class);
 
-    @Option(names = "--pom", description = "Path to the pom.xml to scan", required = true)
+    @Option(names = "--pom", description = "Path to the pom.xml (or project dir) to scan")
     Path pomPath;
+
+    @Option(names = "--build-file",
+            description = "Path to the build.gradle(.kts) (or project dir) to scan via Gradle")
+    Path buildFile;
+
+    @Option(names = "--no-daemon",
+            description = "Run Gradle with --no-daemon (one-shot/CI). Ignored for Maven scans.")
+    boolean noDaemon = false;
 
     @Option(names = "--output", description = "Output format: human, json, md (default: human)",
             converter = CaseInsensitiveConverter.ForOutputFormat.class)
@@ -72,7 +81,7 @@ public class ScanCommand implements Callable<Integer> {
     String slackWebhookFlag = "";
 
     private final MavenCentralClient injectedClient;
-    private final PomDependencyResolver injectedResolver;
+    private final DependencyResolver injectedResolver;
 
     public ScanCommand() {
         this.injectedClient = null;
@@ -82,7 +91,7 @@ public class ScanCommand implements Callable<Integer> {
     /**
      * Package-private: inject components for testing.
      */
-    ScanCommand(MavenCentralClient client, PomDependencyResolver resolver) {
+    ScanCommand(MavenCentralClient client, DependencyResolver resolver) {
         this.injectedClient = client;
         this.injectedResolver = resolver;
     }
@@ -90,18 +99,30 @@ public class ScanCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         MarshalConfig config = MarshalConfigLoader.load(configPath);
-        PomDependencyResolver resolver = injectedResolver != null
-                ? injectedResolver : new PomDependencyResolver(
-                        DependencyScope.fromNames(config.getScan().getScopes()));
+
+        ResolverRouter.Routed routed = route(config);
+        if (routed == null) {
+            return 2;
+        }
+        DependencyResolver resolver = routed.resolver();
+        Path target = routed.target();
+
         MavenCentralClient client = injectedClient != null
                 ? injectedClient : CliHelper.buildProductionClient(cachePath);
 
         RuleEngine engine = CliHelper.buildEngine();
         Set<String> highReps = CliHelper.loadHighReputationGAs();
 
-        List<Coordinates> allDeps = resolver.resolve(pomPath);
+        List<Coordinates> allDeps;
+        try {
+            allDeps = resolver.resolve(target);
+        } catch (ResolutionException e) {
+            // Could-not-analyze is NOT all-clear: distinct exit code, message to stderr (S06).
+            new PrintWriter(System.err, true).println("marshal: " + e.getMessage());
+            return 3;
+        }
         if (allDeps.isEmpty()) {
-            new PrintWriter(System.out, true).println("No dependencies found in " + pomPath);
+            new PrintWriter(System.out, true).println("No dependencies found in " + target);
             return 0;
         }
 
@@ -175,7 +196,7 @@ public class ScanCommand implements Callable<Integer> {
         PrintWriter writer = new PrintWriter(System.out, true);
         Reporter reporter = switch (outputFormat) {
             case HUMAN -> new TerminalReporter(showAdvisory, showUnresolved);
-            case JSON -> new JsonReporter(pomPath.toString(), Instant.now());
+            case JSON -> new JsonReporter(target.toString(), Instant.now());
             case MD -> new MarkdownReporter(showAdvisory, showUnresolved);
         };
         reporter.report(report, writer);
@@ -190,5 +211,36 @@ public class ScanCommand implements Callable<Integer> {
         new SlackNotifier().notify(findings, effectiveWebhook, slackMinLevel);
 
         return CliHelper.computeExitCode(report, threshold, failOn);
+    }
+
+    /**
+     * Selects the resolver and target path. Honors an injected resolver (tests).
+     * Otherwise: explicit {@code --build-file} → Gradle, explicit {@code --pom} → Maven;
+     * a directory argument (or no argument) auto-detects the build file present
+     * via the shared {@link ResolverRouter}. Returns {@code null} after printing an
+     * error when selection fails.
+     */
+    private ResolverRouter.Routed route(MarshalConfig config) {
+        PrintWriter err = new PrintWriter(System.err, true);
+        if (pomPath != null && buildFile != null) {
+            err.println("Specify only one of --pom or --build-file.");
+            return null;
+        }
+        if (injectedResolver != null) {
+            Path target = buildFile != null ? buildFile : pomPath;
+            return new ResolverRouter.Routed(injectedResolver, target);
+        }
+
+        // --build-file is an explicit "scan via Gradle" request; a directory is the
+        // scan root (Gradle does not need a root build file — settings-only is valid).
+        if (buildFile != null) {
+            return new ResolverRouter.Routed(ResolverRouter.gradle(config, noDaemon), buildFile);
+        }
+        if (pomPath != null && !Files.isDirectory(pomPath)) {
+            return new ResolverRouter.Routed(ResolverRouter.maven(config), pomPath);
+        }
+        // No explicit build file (or a directory was given): auto-detect.
+        Path dir = pomPath != null ? pomPath : Path.of(".");
+        return ResolverRouter.autoDetect(dir, config, noDaemon, err);
     }
 }

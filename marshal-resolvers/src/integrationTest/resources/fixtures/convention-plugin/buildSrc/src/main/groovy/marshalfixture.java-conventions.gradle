@@ -1,0 +1,13 @@
+// A convention plugin that declares a dependency on behalf of leaf modules.
+// Proves Marshal captures deps declared OUTSIDE the leaf build files.
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.google.guava:guava:33.0.0-jre'
+}

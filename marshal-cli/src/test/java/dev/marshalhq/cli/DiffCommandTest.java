@@ -3,6 +3,7 @@ package dev.marshalhq.cli;
 import dev.marshalhq.core.*;
 import dev.marshalhq.registry.MavenCentralClient;
 import dev.marshalhq.resolvers.PomDependencyResolver;
+import dev.marshalhq.resolvers.ResolutionException;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -182,5 +183,61 @@ class DiffCommandTest {
                 "--output", "HUMAN", "--threshold", "RED", "--fail-on", "NEVER"
         );
         assertThat(exit).isEqualTo(0);
+    }
+
+    // ── honesty invariant (§2.4): either side unresolvable → exit 3 ──────────────
+
+    @Test
+    void headUnresolvable_exits3_neverReportsNoNewRisks() {
+        // base resolves fine; head cannot be built/resolved.
+        when(mockResolver.resolve(tempDir.resolve("base.xml"))).thenReturn(List.of(LIB_V1));
+        when(mockResolver.resolve(tempDir.resolve("head.xml")))
+                .thenThrow(new ResolutionException("Gradle build failed (exit 1)"));
+        DiffCommand cmd = new DiffCommand(mockClient, mockResolver);
+
+        int exit = new CommandLine(cmd).execute(
+                "--base", tempDir.resolve("base.xml").toString(),
+                "--head", tempDir.resolve("head.xml").toString(),
+                "--output", "HUMAN"
+        );
+
+        assertThat(exit).isEqualTo(3);
+        verifyNoInteractions(mockClient); // never scored a partial set → never "no new risks"
+    }
+
+    @Test
+    void exit3_cannotBeDowngradedByFailOnNever() {
+        // Could-not-analyze is not a finding — fail-on must NOT turn exit 3 green (§3.5).
+        when(mockResolver.resolve(tempDir.resolve("base.xml"))).thenReturn(List.of(LIB_V1));
+        when(mockResolver.resolve(tempDir.resolve("head.xml")))
+                .thenThrow(new ResolutionException("Gradle build failed (exit 1)"));
+        DiffCommand cmd = new DiffCommand(mockClient, mockResolver);
+
+        int exit = new CommandLine(cmd).execute(
+                "--base", tempDir.resolve("base.xml").toString(),
+                "--head", tempDir.resolve("head.xml").toString(),
+                "--output", "HUMAN", "--fail-on", "NEVER"
+        );
+
+        assertThat(exit).isEqualTo(3);
+    }
+
+    @Test
+    void baseUnresolvable_exits3_neverNoiseWall() {
+        // base cannot be resolved — must NOT fall through to head-minus-empty (which
+        // would flag every head dependency as new).
+        when(mockResolver.resolve(tempDir.resolve("base.xml")))
+                .thenThrow(new ResolutionException("Gradle build failed (exit 1)"));
+        DiffCommand cmd = new DiffCommand(mockClient, mockResolver);
+
+        int exit = new CommandLine(cmd).execute(
+                "--base", tempDir.resolve("base.xml").toString(),
+                "--head", tempDir.resolve("head.xml").toString(),
+                "--output", "HUMAN"
+        );
+
+        assertThat(exit).isEqualTo(3);
+        verifyNoInteractions(mockClient); // no findings assembled → no noise wall
+        verify(mockResolver, never()).resolve(tempDir.resolve("head.xml"));
     }
 }

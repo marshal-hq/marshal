@@ -4,15 +4,22 @@
 #   .github/workflows/marshal.yml
 #
 # What it does:
-#   • Runs on every PR that touches pom.xml
-#   • Diffs the dependency graph between the PR branch and its base
+#   • Runs on every PR that touches a Maven or Gradle build file
+#   • Diffs the resolved dependency graph between the PR branch and its base
 #   • Posts (or updates in place) a risk summary comment on the PR
 #   • Fails CI on RED findings (configurable via `threshold` and `fail-on`)
 #   • Optionally sends a Slack alert on RED findings
 #
+# Works for both Maven and Gradle: the action detects the build tool from `path`.
+# For Gradle, the action runs ./gradlew on both the base and head trees, so the
+# project's own build toolchain must be available on the runner — set it up BEFORE
+# the Marshal step (see the setup-java step below).
+#
 # Prerequisites:
-#   • actions/checkout with fetch-depth: 0 (needed so marshal can read the base POM)
-#   • GITHUB_TOKEN permissions: pull-requests: write
+#   • actions/checkout with fetch-depth: 0 — required so the PR base can be built
+#     and diffed. A shallow checkout (the default) cannot be compared and the action
+#     will fail honestly telling you to set this.
+#   • permissions: pull-requests: write (to post the comment), contents: read.
 
 name: Marshal Security Scan
 
@@ -24,8 +31,8 @@ on:
       - '**/build.gradle.kts'
 
 permissions:
-  pull-requests: write   # required: post/update the PR comment
-  contents: read         # required: checkout code
+  pull-requests: write   # post/update the PR comment
+  contents: read         # checkout code
 
 jobs:
   marshal:
@@ -33,33 +40,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Full checkout so marshal diff can read the base-branch POM via GitHub API
+      # Full history so the PR base tree can be materialized and built.
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # Run marshal diff and post the result as a PR comment
-      - name: Marshal scan
-        uses: marshal-security/marshal-action@v1
+      # Gradle projects only: provision the project's build toolchain so ./gradlew
+      # can resolve. Omit for Maven-only repos. The Marshal jar itself runs on a
+      # separate Java 21 the action resolves on its own.
+      - name: Set up build JDK
+        uses: actions/setup-java@v4
         with:
-          # Path to your POM file, relative to the repository root
-          pom-path: pom.xml
+          distribution: temurin
+          java-version: '17'
 
-          # Minimum risk level that fails CI.
-          # Options: green | yellow | orange | red (default: red)
+      - name: Marshal scan
+        uses: marshal-hq/marshal-action@v1
+        with:
+          # A build file or a project directory, relative to the repo root.
+          # Maven: pom.xml. Gradle: the project dir (default '.') or build.gradle(.kts).
+          path: '.'
+
+          # Minimum risk level that fails CI: green | yellow | orange | red (default: red)
           threshold: red
 
-          # Post a risk summary comment on the PR.
-          # Set to 'false' to skip the comment (e.g. in fork PRs without write access).
+          # Post a risk summary comment on the PR. Set 'false' for fork PRs without
+          # write access.
           comment-on-pr: 'true'
 
-          # Exit code behavior when threshold is breached.
-          # Options: fail | warn | never (default: fail)
+          # Exit behavior when threshold is breached: fail | warn | never (default: fail).
+          # Note: a could-not-analyze failure (exit 3) always fails the check regardless.
           fail-on: fail
 
-          # Slack webhook URL for RED alerts (optional).
-          # Store the URL as a repository secret.
+          # Slack webhook for RED alerts (optional); store as a repository secret.
           # slack-webhook: ${{ secrets.MARSHAL_SLACK_WEBHOOK }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

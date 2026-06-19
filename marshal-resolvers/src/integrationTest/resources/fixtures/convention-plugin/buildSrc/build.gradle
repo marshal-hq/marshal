@@ -1,0 +1,8 @@
+// Enables precompiled convention plugins written as Groovy script plugins.
+plugins {
+    id 'groovy-gradle-plugin'
+}
+
+repositories {
+    mavenCentral()
+}
