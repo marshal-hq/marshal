@@ -31,14 +31,15 @@ class EnumParsingTest {
     @TempDir Path tempDir;
 
     private PrintStream origOut, origErr;
-    private ByteArrayOutputStream outBytes;
+    private ByteArrayOutputStream outBytes, errBytes;
 
     @BeforeEach
     void redirect() {
         origOut = System.out; origErr = System.err;
         outBytes = new ByteArrayOutputStream();
+        errBytes = new ByteArrayOutputStream();
         System.setOut(new PrintStream(outBytes));
-        System.setErr(new PrintStream(new ByteArrayOutputStream()));
+        System.setErr(new PrintStream(errBytes));
     }
 
     @AfterEach
@@ -88,7 +89,35 @@ class EnumParsingTest {
     @Test
     void outputFormatConverter_rejectsUnknownValue() {
         assertThatThrownBy(() -> new CaseInsensitiveConverter.ForOutputFormat().convert("xml"))
-            .isInstanceOf(IllegalArgumentException.class);
+            .isInstanceOf(CommandLine.TypeConversionException.class)
+            .hasMessageContaining("not a valid output format")
+            .hasMessageContaining("xml");
+    }
+
+    @Test
+    void severityConverter_rejectsUnknownValue_namesTheChoices() {
+        assertThatThrownBy(() -> new CaseInsensitiveConverter.ForSeverity().convert("bogus"))
+            .isInstanceOf(CommandLine.TypeConversionException.class)
+            .hasMessageContaining("not a valid threshold")
+            .hasMessageContaining("green, yellow, orange, red");
+    }
+
+    // ── config-error handler: concise message, exit 2, no usage dump (§3.9 item 2) ──
+
+    @Test
+    void invalidThreshold_exits2_withConciseMessage_noUsageBlock() {
+        // create() wires the parameter-exception handler; the bad --threshold fails at
+        // parse time, before any resolution, so no mocks are needed.
+        int exit = MarshalCli.create().execute(
+            "diff", "--base", "b.xml", "--head", "h.xml", "--threshold", "bogus");
+
+        assertThat(exit).isEqualTo(2);
+        String err = errBytes.toString();
+        assertThat(err).contains("not a valid threshold");
+        assertThat(err).contains("bogus");
+        // the whole point: no picocli usage / flag reference dumped
+        assertThat(err).doesNotContain("Usage:");
+        assertThat(err).doesNotContain("--help");
     }
 
     // ── integration: picocli wires converters end-to-end ──────────────────────

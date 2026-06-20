@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.marshalhq.core.*;
 import dev.marshalhq.registry.MavenCentralClient;
+import dev.marshalhq.resolvers.GradleDependencyResolver;
 import dev.marshalhq.resolvers.PomDependencyResolver;
 
 import org.junit.jupiter.api.AfterEach;
@@ -42,6 +43,8 @@ class EndToEndCliTest {
     MavenCentralClient mockClient;
     @Mock
     PomDependencyResolver mockResolver;
+    @Mock
+    GradleDependencyResolver mockGradleResolver;
     @TempDir
     Path tempDir;
 
@@ -122,6 +125,16 @@ class EndToEndCliTest {
                 "--base", tempDir.resolve("base.xml").toString(),
                 "--head", tempDir.resolve("head.xml").toString()
         };
+        String[] allArgs = new String[baseArgs.length + extraArgs.length];
+        System.arraycopy(baseArgs, 0, allArgs, 0, baseArgs.length);
+        System.arraycopy(extraArgs, 0, allArgs, baseArgs.length, extraArgs.length);
+        return new CommandLine(cmd).execute(allArgs);
+    }
+
+    /** Scan routed through the Gradle resolver (via --build-file), mocked like Maven. */
+    private int runGradleScan(String... extraArgs) {
+        ScanCommand cmd = new ScanCommand(mockClient, mockGradleResolver);
+        String[] baseArgs = { "--build-file", tempDir.resolve("build.gradle.kts").toString() };
         String[] allArgs = new String[baseArgs.length + extraArgs.length];
         System.arraycopy(baseArgs, 0, allArgs, 0, baseArgs.length);
         System.arraycopy(extraArgs, 0, allArgs, baseArgs.length, extraArgs.length);
@@ -298,8 +311,72 @@ class EndToEndCliTest {
         long markerCount = lines.stream().filter("<!-- marshal-bot -->"::equals).count();
         assertThat(markerCount).isEqualTo(1);
 
-        // Next non-empty line after the marker starts with "## 🛡 Marshal"
-        String nextNonEmpty = lines.stream().skip(1).filter(l -> !l.isBlank()).findFirst().orElse("");
-        assertThat(nextNonEmpty).startsWith("## 🛡 Marshal");
+        // The bot marker is followed by the machine-readable actionable marker, then
+        // the header. The actionable marker drives Action comment suppression (§3.9 item 1).
+        assertThat(lines.get(1)).isEqualTo("<!-- marshal:actionable=true -->");
+        String nextHeader = lines.stream().filter(l -> l.startsWith("## ")).findFirst().orElse("");
+        assertThat(nextHeader).startsWith("## 🛡 Marshal");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // B3.6–B3.8 — A Gradle-sourced scan renders the same human/JSON/markdown output
+    // as a Maven scan. The reporters are pure functions of ScanReport, so this pins
+    // output-format consistency across build tools the same way B3.1–B3.3 pin Maven.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void b36_gradleScan_humanOutput_isClean() {
+        when(mockClient.getVersionHistory("com.example", "lib-a")).thenReturn(List.of("2.0.0", "1.0.0"));
+        when(mockClient.fetchMetadata(LIB_A_200)).thenReturn(presentMeta(LIB_A_200, "AABBCC"));
+        when(mockClient.fetchMetadata(LIB_A_100)).thenReturn(presentMeta(LIB_A_100, "AABBCC"));
+        when(mockClient.getVersionHistory("com.example", "lib-b")).thenReturn(List.of("1.0.0"));
+        when(mockClient.fetchMetadata(LIB_B_100)).thenReturn(presentMeta(LIB_B_100, "AABBCC"));
+        when(mockGradleResolver.resolve(any())).thenReturn(List.of(LIB_A_200, LIB_B_100));
+
+        int exit = runGradleScan("--output", "HUMAN");
+
+        assertThat(exit).isEqualTo(0);
+        assertThat(stdout()).contains("WATCH").contains("ANALYZE").contains("BLOCK");
+        assertThat(stdout()).contains("2 dependencies").contains("0 flagged");
+        assertThat(stdout()).contains("─");
+        assertThat(stdout()).doesNotContain("Exception");
+        assertThat(stderr().strip()).isEmpty();
+    }
+
+    @Test
+    void b37_gradleScan_jsonOutput_isPureJson_schemaLocked() throws Exception {
+        when(mockClient.getVersionHistory("com.example", "lib-a")).thenReturn(List.of("2.0.0", "1.0.0"));
+        when(mockClient.fetchMetadata(LIB_A_200)).thenReturn(redCurrent(LIB_A_200));
+        when(mockClient.fetchMetadata(LIB_A_100)).thenReturn(redPrevious(LIB_A_100));
+        when(mockGradleResolver.resolve(any())).thenReturn(List.of(LIB_A_200));
+
+        int exit = runGradleScan("--output", "JSON");  // default --fail-on fail, --threshold red
+
+        assertThat(exit).isEqualTo(1);  // RED finding → fail
+        String out = stdout();
+        assertThat(out).doesNotContain("[");  // no ANSI escape sequences
+
+        JsonNode root = MAPPER.readTree(out);  // throws if not valid JSON
+        assertThat(root.get("schema").asText()).isEqualTo("1.0");
+        assertThat(root.get("summary").get("total_dependencies").asInt()).isEqualTo(1);
+        assertThat(root.get("summary").get("flagged").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    void b38_gradleScan_markdownOutput_hasMarkerAndHeader() {
+        when(mockClient.getVersionHistory("com.example", "lib-a")).thenReturn(List.of("2.0.0", "1.0.0"));
+        when(mockClient.fetchMetadata(LIB_A_200)).thenReturn(redCurrent(LIB_A_200));
+        when(mockClient.fetchMetadata(LIB_A_100)).thenReturn(redPrevious(LIB_A_100));
+        when(mockGradleResolver.resolve(any())).thenReturn(List.of(LIB_A_200));
+
+        int exit = runGradleScan("--output", "MD", "--threshold", "RED", "--fail-on", "WARN");
+
+        assertThat(exit).isEqualTo(0);  // fail-on=warn → always 0
+        String out = stdout();
+        assertThat(out.lines().findFirst().orElse("")).isEqualTo("<!-- marshal-bot -->");
+        assertThat(out).contains("## 🛡 Marshal Dependency Analysis");
+        assertThat(out).contains("### 🔴 HIGH RISK");
+        assertThat(out).contains("<sub>Powered by [Marshal]");
+        assertThat(out).doesNotContain("[");  // no ANSI
     }
 }

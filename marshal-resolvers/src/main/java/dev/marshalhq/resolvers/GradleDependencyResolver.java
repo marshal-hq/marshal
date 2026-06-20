@@ -48,10 +48,24 @@ public class GradleDependencyResolver implements DependencyResolver {
     private static final boolean IS_WINDOWS =
             System.getProperty("os.name", "").toLowerCase().contains("win");
 
+    /**
+     * Resolves the Gradle executable for a project. Extracted as a seam so the
+     * no-wrapper / {@code gradle}-on-PATH fallback is unit-testable without a real
+     * wrapper or a real PATH ({@link #DEFAULT_LOCATOR} is the production behavior).
+     */
+    @FunctionalInterface
+    interface GradleLocator {
+        String locate(Path scanRoot);
+    }
+
+    /** Production locator: the project's wrapper if present, else {@code gradle} on PATH. */
+    static final GradleLocator DEFAULT_LOCATOR = GradleDependencyResolver::defaultLocate;
+
     private final ObjectMapper mapper = new ObjectMapper();
     private final boolean includeTest;
     private final boolean noDaemon;
     private final Duration timeout;
+    private final GradleLocator locator;
 
     public GradleDependencyResolver() {
         this(DEFAULT_SCOPES, false);
@@ -68,9 +82,16 @@ public class GradleDependencyResolver implements DependencyResolver {
     /** Package-private: lets tests inject a short timeout for the hang case. */
     GradleDependencyResolver(Collection<DependencyScope> includedScopes, boolean noDaemon,
             Duration timeout) {
+        this(includedScopes, noDaemon, timeout, DEFAULT_LOCATOR);
+    }
+
+    /** Package-private: lets tests inject the Gradle locator (PATH-fallback case). */
+    GradleDependencyResolver(Collection<DependencyScope> includedScopes, boolean noDaemon,
+            Duration timeout, GradleLocator locator) {
         this.includeTest = includedScopes.contains(DependencyScope.TEST);
         this.noDaemon = noDaemon;
         this.timeout = timeout;
+        this.locator = locator;
     }
 
     /**
@@ -88,7 +109,7 @@ public class GradleDependencyResolver implements DependencyResolver {
             scanRoot = Path.of(".");
         }
 
-        String gradleCmd = locateGradle(scanRoot);
+        String gradleCmd = locator.locate(scanRoot);
 
         Path initScript = null;
         Path outJson = null;
@@ -109,7 +130,7 @@ public class GradleDependencyResolver implements DependencyResolver {
         }
     }
 
-    private String locateGradle(Path scanRoot) {
+    private static String defaultLocate(Path scanRoot) {
         String wrapperName = IS_WINDOWS ? "gradlew.bat" : "gradlew";
         Path wrapper = scanRoot.resolve(wrapperName);
         if (Files.isRegularFile(wrapper)) {

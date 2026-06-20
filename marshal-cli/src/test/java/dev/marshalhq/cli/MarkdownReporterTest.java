@@ -35,6 +35,39 @@ class MarkdownReporterTest {
         assertThat(md.lines().findFirst().orElse("")).isEqualTo("<!-- marshal-bot -->");
     }
 
+    // ── actionable marker (drives Action comment suppression, §3.9 item 1) ──────────
+
+    @Test
+    void actionableMarker_falseWhenNothingFlaggedAdvisoryOrUnresolved() {
+        Finding green = finding("a:b", null, "1.0", 4, Severity.GREEN, List.of());
+        String md = reporter.render(List.of(green));
+        assertThat(md).contains("<!-- marshal:actionable=false -->");
+    }
+
+    @Test
+    void actionableMarker_falseOnEmptyDiff() {
+        assertThat(reporter.render(List.of())).contains("<!-- marshal:actionable=false -->");
+    }
+
+    @Test
+    void actionableMarker_trueWhenFlagged() {
+        Finding red = finding("a:b", "1.0", "2.0", 87, Severity.RED,
+                List.of(signal("SIG-DROPPED", 40, "ev")));
+        assertThat(reporter.render(List.of(red))).contains("<!-- marshal:actionable=true -->");
+    }
+
+    @Test
+    void actionableMarker_trueWhenOnlyAdvisory() {
+        Finding yellow = finding("a:b", "1.0", "2.0", 34, Severity.YELLOW, List.of());
+        assertThat(reporter.render(List.of(yellow))).contains("<!-- marshal:actionable=true -->");
+    }
+
+    @Test
+    void actionableMarker_trueWhenOnlyUnresolved() {
+        Finding unresolved = Finding.unresolved(new Coordinates("com.example", "lib-x", "UNRESOLVED"));
+        assertThat(reporter.render(List.of(unresolved))).contains("<!-- marshal:actionable=true -->");
+    }
+
     // ── header ────────────────────────────────────────────────────────────────────
 
     @Test

@@ -65,6 +65,14 @@ public class MarkdownReporter implements Reporter {
 
         // Hidden idempotency marker — must be the very first line
         sb.append("<!-- marshal-bot -->\n");
+        // Machine-readable signal for the Action: whether this result is worth a PR
+        // comment at all. "actionable" means there is at least one flagged finding,
+        // advisory, or unresolved dependency. run.sh reads this marker instead of
+        // grepping the rendered body, so an all-safe diff can be left silent.
+        boolean actionable = report.flaggedCount() > 0
+                || report.advisoryCount() > 0
+                || report.unresolvedCount() > 0;
+        sb.append("<!-- marshal:actionable=").append(actionable).append(" -->\n");
         sb.append("## 🛡 Marshal Dependency Analysis\n");
         sb.append("\n");
         sb.append("**").append(report.total()).append(" ")

@@ -72,6 +72,11 @@ scans the dependency changes, and posts a comment with any findings. Set
 `fail-on: fail` with `threshold: red` to block merges on critical findings, or
 set `fail-on: never` to comment without blocking. Safe updates pass silently.
 
+A failing check flags a risky update, but on its own it will not stop a merge.
+GitHub only enforces a check once you require it. To make Marshal blocking, turn
+on "Require status checks to pass" in your branch protection rules and select the
+Marshal check.
+
 If Marshal cannot resolve your dependencies, for example because the build
 fails, the check fails rather than passing silently. A scanner that cannot
 analyze your project should not report it as clean.

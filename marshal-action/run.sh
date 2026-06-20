@@ -51,6 +51,13 @@ if [ -n "${BASE_SHA}" ]; then
   BASE_DIR="${RUNNER_TEMP:-/tmp}/marshal-base"
   rm -rf "${BASE_DIR}"
   # Default CI checkout is shallow, so the base SHA is usually absent locally (§3.5).
+  # We fetch it explicitly by SHA, which is the robustness mechanism: for a normal
+  # same-repo pull_request the base commit is reachable on origin and this fetch
+  # succeeds regardless of the initial checkout depth, so the diff resolves even
+  # without fetch-depth: 0. The exit-3 branch below is therefore defense-in-depth,
+  # not the common path — it fires only when the base is genuinely unreachable
+  # (force-pushed or deleted base branch, a fork PR without read access to the base,
+  # or a network/permission failure), where failing honestly beats a misleading diff.
   if ! git -C "${WORKSPACE}" fetch --no-tags --depth=1 origin "${BASE_SHA}" 2>"${ERR_FILE}"; then
     echo "::error::Marshal could not analyze this project: base ref ${BASE_SHA} is not available. Check out with fetch-depth: 0 (actions/checkout) so the PR base can be compared." >&2
     exit 3
@@ -87,9 +94,18 @@ echo "[marshal] Analysis complete (exit ${EXIT})."
 
 # ── build the comment/annotation body per exit code (§3.6) ──────────────────────
 REASON="$(tr -d '\r' < "${ERR_FILE}" | tail -n 20)"
+# ACTIONABLE gates whether we have anything worth a PR comment. Config/analyze
+# errors (2/3) and unexpected codes are always actionable; a normal scan/diff
+# (0/1) is actionable only when the CLI's structured marker says so.
+ACTIONABLE=true
 case "${EXIT}" in
   0|1)
     COMMENT_BODY_FILE="${REPORT_FILE}"
+    # Decide post-or-skip from the CLI's marker, not by grepping rendered prose.
+    # actionable=false means nothing flagged, advisory, or unresolved (§3.9 item 1).
+    if grep -q '<!-- marshal:actionable=false -->' "${REPORT_FILE}"; then
+      ACTIONABLE=false
+    fi
     ;;
   2)
     echo "::error::Marshal configuration error: ${REASON}"
@@ -110,28 +126,41 @@ esac
 
 # ── post / update the PR comment (idempotent via the <!-- marshal-bot --> marker) ─
 if [ "${COMMENT_ON_PR}" = "true" ] && [ -n "${TOKEN}" ] && [ -n "${PR_NUMBER}" ] && [ -n "${REPO}" ]; then
-  BODY=$(jq -Rs . < "${COMMENT_BODY_FILE}")
   EXISTING_ID=$(curl -sf \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments?per_page=100" \
     | jq -r '[.[] | select(.body | startswith("<!-- marshal-bot -->"))] | first | .id // ""' || echo "")
-  if [ -n "${EXISTING_ID}" ]; then
-    echo "[marshal] Updating PR comment ${EXISTING_ID}."
-    curl -sf -X PATCH \
-      -H "Authorization: Bearer ${TOKEN}" \
-      -H "Accept: application/vnd.github+json" \
-      -H "Content-Type: application/json" \
-      "https://api.github.com/repos/${REPO}/issues/comments/${EXISTING_ID}" \
-      -d "{\"body\": ${BODY}}" > /dev/null
+
+  if [ "${ACTIONABLE}" = "false" ] && [ -z "${EXISTING_ID}" ]; then
+    # Nothing to say and nothing said before: stay silent. A bot that comments when
+    # it has nothing to report just trains people to ignore it (§3.9 item 1).
+    echo "[marshal] Nothing actionable and no prior comment; staying silent."
   else
-    echo "[marshal] Posting PR comment on #${PR_NUMBER}."
-    curl -sf -X POST \
-      -H "Authorization: Bearer ${TOKEN}" \
-      -H "Accept: application/vnd.github+json" \
-      -H "Content-Type: application/json" \
-      "https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments" \
-      -d "{\"body\": ${BODY}}" > /dev/null
+    if [ "${ACTIONABLE}" = "false" ]; then
+      # A prior Marshal comment exists but the PR is now clean. Replace the stale
+      # finding with a brief note rather than leaving it showing.
+      printf '<!-- marshal-bot -->\n## 🛡 Marshal Dependency Analysis\n\nNo current findings. The latest changes added nothing flagged, advisory, or unresolved.\n\n<sub>Powered by [Marshal](https://marshalhq.dev) · [False positive?](https://github.com/marshal-hq/marshal/issues)</sub>\n' > "${REPORT_FILE}"
+      COMMENT_BODY_FILE="${REPORT_FILE}"
+    fi
+    BODY=$(jq -Rs . < "${COMMENT_BODY_FILE}")
+    if [ -n "${EXISTING_ID}" ]; then
+      echo "[marshal] Updating PR comment ${EXISTING_ID}."
+      curl -sf -X PATCH \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "Accept: application/vnd.github+json" \
+        -H "Content-Type: application/json" \
+        "https://api.github.com/repos/${REPO}/issues/comments/${EXISTING_ID}" \
+        -d "{\"body\": ${BODY}}" > /dev/null
+    else
+      echo "[marshal] Posting PR comment on #${PR_NUMBER}."
+      curl -sf -X POST \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "Accept: application/vnd.github+json" \
+        -H "Content-Type: application/json" \
+        "https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments" \
+        -d "{\"body\": ${BODY}}" > /dev/null
+    fi
   fi
 fi
 
