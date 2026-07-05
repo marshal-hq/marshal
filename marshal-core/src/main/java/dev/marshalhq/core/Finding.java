@@ -11,6 +11,10 @@ import java.util.List;
  * <p>
  * When {@code hasUnknownMetadata} is true at least one metadata field could not be fetched
  * (e.g. signature status is UNKNOWN); results may be partial.
+ * <p>
+ * When {@code suppressed} is true a whitelist matched this finding's GAV. It stays in
+ * the audit record (with {@code suppression} metadata) but drops out of the risk list,
+ * the exit code, and Slack.
  */
 public record Finding(
     Coordinates coordinates,
@@ -20,9 +24,35 @@ public record Finding(
     Severity riskLevel,          // null when isUnresolved
     List<RuleResult> signals,
     boolean isUnresolved,
-    boolean hasUnknownMetadata
+    boolean hasUnknownMetadata,
+    boolean suppressed,
+    SuppressionInfo suppression  // null unless suppressed
 ) {
+    /**
+     * Convenience constructor for the common, un-suppressed case. Keeps every existing
+     * 8-arg call site (and reporter test) working unchanged.
+     */
+    public Finding(
+        Coordinates coordinates,
+        String fromVersion,
+        String toVersion,
+        int riskScore,
+        Severity riskLevel,
+        List<RuleResult> signals,
+        boolean isUnresolved,
+        boolean hasUnknownMetadata
+    ) {
+        this(coordinates, fromVersion, toVersion, riskScore, riskLevel, signals,
+                isUnresolved, hasUnknownMetadata, false, null);
+    }
+
     public static Finding unresolved(Coordinates coordinates) {
         return new Finding(coordinates, null, coordinates.version(), 0, null, List.of(), true, false);
+    }
+
+    /** Returns a copy of this finding marked suppressed by the given whitelist match. */
+    public Finding withSuppression(SuppressionInfo info) {
+        return new Finding(coordinates, fromVersion, toVersion, riskScore, riskLevel,
+                signals, isUnresolved, hasUnknownMetadata, true, info);
     }
 }

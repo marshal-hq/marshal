@@ -198,6 +198,62 @@ class JsonReporterTest {
         assertThat(finding.get("from_version").isNull()).isTrue();
     }
 
+    // ── suppressed findings (audit record) ─────────────────────────────────────────
+
+    private static Finding suppressed(String ga, int score, Severity level,
+            String list, String reason, String expires, String addedBy) {
+        return finding(ga, "1.0.0", "2.0.0", score, level, List.of())
+                .withSuppression(new SuppressionInfo(list, reason, expires, addedBy));
+    }
+
+    @Test
+    void suppressedFindingIsAlwaysPresentInJsonWithMetadata() throws Exception {
+        Finding f = suppressed("com.acme:internal-lib", 90, Severity.RED,
+                "user", "Internal artifact, vetted", "2026-12-22", "usman");
+
+        JsonNode finding = render(List.of(f)).get("findings").get(0);
+        assertThat(finding.get("package").asText()).isEqualTo("com.acme:internal-lib");
+        assertThat(finding.get("suppressed").asBoolean()).isTrue();
+        assertThat(finding.get("suppressed_by").asText()).isEqualTo("user");
+        JsonNode meta = finding.get("suppression");
+        assertThat(meta.get("reason").asText()).isEqualTo("Internal artifact, vetted");
+        assertThat(meta.get("expires").asText()).isEqualTo("2026-12-22");
+        assertThat(meta.get("added_by").asText()).isEqualTo("usman");
+    }
+
+    @Test
+    void unsuppressedFindingHasSuppressedFalseAndNoMetadata() throws Exception {
+        Finding f = finding("a:b", "1.0", "2.0", 87, Severity.RED, List.of());
+        JsonNode finding = render(List.of(f)).get("findings").get(0);
+        assertThat(finding.get("suppressed").asBoolean()).isFalse();
+        assertThat(finding.has("suppression")).isFalse();
+    }
+
+    @Test
+    void suppressedFindingDoesNotCountTowardFlaggedOrDistribution() throws Exception {
+        List<Finding> findings = List.of(
+                suppressed("com.acme:trusted", 90, Severity.RED, "marshal", "top-200", null, null),
+                finding("c:d", "2.0", "3.0", 62, Severity.ORANGE, List.of()));
+
+        JsonNode summary = render(findings).get("summary");
+        assertThat(summary.get("flagged").asInt()).isEqualTo(1);          // only the ORANGE
+        assertThat(summary.get("total_dependencies").asInt()).isEqualTo(2); // both still counted
+        JsonNode dist = summary.get("risk_distribution");
+        assertThat(dist.get("red").asInt()).isZero();                     // suppressed RED excluded
+        assertThat(dist.get("orange").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    void marshalSuppressionOmitsNullExpiryAndAddedBy() throws Exception {
+        Finding f = suppressed("org.springframework:spring-core", 70, Severity.ORANGE,
+                "marshal", "top-200", null, null);
+        JsonNode meta = render(List.of(f)).get("findings").get(0).get("suppression");
+        assertThat(meta.get("reason").asText()).isEqualTo("top-200");
+        // null expiry / added_by are emitted as JSON null, never as the string "null".
+        assertThat(meta.get("expires").isNull()).isTrue();
+        assertThat(meta.get("added_by").isNull()).isTrue();
+    }
+
     @Test
     void outputIsValidJson() throws Exception {
         RuleResult sig = new RuleResult(40, Severity.RED, "dropped", "SIG-DROPPED");

@@ -35,7 +35,7 @@ Run the scan:
 
 ```bash
 java -jar marshal-cli/build/libs/marshal-cli-*.jar \
-  scan --pom examples/demo/pom.xml
+  scan --source examples/demo/pom.xml
 ```
 
 ## Cache expiry

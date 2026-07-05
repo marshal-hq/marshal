@@ -14,7 +14,14 @@ THRESHOLD="${INPUT_THRESHOLD:-red}"
 FAIL_ON="${INPUT_FAIL_ON:-fail}"
 COMMENT_ON_PR="${INPUT_COMMENT_ON_PR:-true}"
 SLACK_WEBHOOK="${INPUT_SLACK_WEBHOOK:-}"
+UPDATE_WHITELIST="${INPUT_UPDATE_WHITELIST:-true}"
 JAR="${MARSHAL_JAR:?MARSHAL_JAR not set}"
+
+# When refresh is off, pin to the jar's embedded whitelist baseline (reproducible CI).
+FROZEN_ARGS=()
+if [ "${UPDATE_WHITELIST}" = "false" ]; then
+  FROZEN_ARGS+=(--frozen-whitelist)
+fi
 
 # Java 21 to run the Marshal jar — explicit, never the project's JAVA_HOME (§3.3).
 MARSHAL_JAVA_HOME="${JAVA_HOME_21_X64:-${JAVA_HOME_21_ARM64:-${JAVA_HOME:-}}}"
@@ -73,6 +80,7 @@ if [ -n "${BASE_SHA}" ]; then
     --output MD \
     --threshold "${THRESHOLD_UPPER}" \
     --fail-on "${FAIL_ON_UPPER}" \
+    "${FROZEN_ARGS[@]}" \
     >"${REPORT_FILE}" 2>"${ERR_FILE}"
   EXIT=$?
   git -C "${WORKSPACE}" worktree remove --force "${BASE_DIR}" 2>/dev/null || true
@@ -80,11 +88,12 @@ else
   # ── non-PR (push, etc.): no base to diff against — scan the head instead (§3.5) ─
   echo "[marshal] No pull-request base; running a full scan of the head."
   marshal scan \
-    --pom "${WORKSPACE}/${TARGET_PATH}" \
+    --source "${WORKSPACE}/${TARGET_PATH}" \
     --no-daemon \
     --output MD \
     --threshold "${THRESHOLD_UPPER}" \
     --fail-on "${FAIL_ON_UPPER}" \
+    "${FROZEN_ARGS[@]}" \
     >"${REPORT_FILE}" 2>"${ERR_FILE}"
   EXIT=$?
 fi

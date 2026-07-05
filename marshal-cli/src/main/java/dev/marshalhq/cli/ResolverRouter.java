@@ -1,14 +1,14 @@
 package dev.marshalhq.cli;
 
-import java.io.PrintWriter;
-import java.nio.file.Files;
-import java.nio.file.Path;
-
 import dev.marshalhq.core.config.MarshalConfig;
 import dev.marshalhq.resolvers.DependencyResolver;
 import dev.marshalhq.resolvers.DependencyScope;
 import dev.marshalhq.resolvers.GradleDependencyResolver;
 import dev.marshalhq.resolvers.PomDependencyResolver;
+
+import java.io.PrintWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
  * Maps a path (a build file or a project directory) to the resolver that can
@@ -72,7 +72,6 @@ final class ResolverRouter {
     }
 
     static GradleDependencyResolver gradle(MarshalConfig config, boolean noDaemon) {
-        return new GradleDependencyResolver(
-                DependencyScope.fromNames(config.getScan().getScopes()), noDaemon);
+        return new GradleDependencyResolver(DependencyScope.fromNames(config.getScan().getScopes()), noDaemon);
     }
 }

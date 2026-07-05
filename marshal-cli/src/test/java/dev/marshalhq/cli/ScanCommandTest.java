@@ -85,7 +85,7 @@ class ScanCommandTest {
         when(mockClient.fetchMetadata(LIB_A_PREV)).thenReturn(signedMeta(LIB_A_PREV));
 
         ScanCommand cmd = new ScanCommand(mockClient, mockResolver);
-        int exit = run(cmd, "--pom", tempDir.resolve("pom.xml").toString());
+        int exit = run(cmd, "--source", tempDir.resolve("pom.xml").toString());
 
         // Signed current + signed previous → GREEN → no failure
         assertThat(exit).isEqualTo(0);
@@ -102,7 +102,7 @@ class ScanCommandTest {
 
         ScanCommand cmd = new ScanCommand(mockClient, mockResolver);
         // Must not throw; MISSING_SIG fires (15 pts → YELLOW)
-        int exit = run(cmd, "--pom", tempDir.resolve("pom.xml").toString());
+        int exit = run(cmd, "--source", tempDir.resolve("pom.xml").toString());
         assertThat(exit).isEqualTo(0); // YELLOW < RED threshold default
     }
 
@@ -112,7 +112,7 @@ class ScanCommandTest {
         when(mockResolver.resolve(any())).thenReturn(List.of(unres));
 
         ScanCommand cmd = new ScanCommand(mockClient, mockResolver);
-        int exit = run(cmd, "--pom", tempDir.resolve("pom.xml").toString());
+        int exit = run(cmd, "--source", tempDir.resolve("pom.xml").toString());
 
         assertThat(exit).isEqualTo(0);
         verifyNoInteractions(mockClient); // no fetch for UNRESOLVED deps
@@ -127,7 +127,7 @@ class ScanCommandTest {
 
         ScanCommand cmd = new ScanCommand(mockClient, mockResolver);
         // UNKNOWN → MissingSignatureRule abstains → score 0 → GREEN → exit 0
-        int exit = run(cmd, "--pom", tempDir.resolve("pom.xml").toString());
+        int exit = run(cmd, "--source", tempDir.resolve("pom.xml").toString());
         assertThat(exit).isEqualTo(0);
     }
 
@@ -155,7 +155,7 @@ class ScanCommandTest {
     void failOnFail_redFinding_redThreshold_exits1() {
         setupRedFinding();
         int exit = run(new ScanCommand(mockClient, mockResolver),
-                "--pom", tempDir.resolve("pom.xml").toString(),
+                "--source", tempDir.resolve("pom.xml").toString(),
                 "--threshold", "RED", "--fail-on", "FAIL");
         assertThat(exit).isEqualTo(1);
     }
@@ -164,7 +164,7 @@ class ScanCommandTest {
     void failOnWarn_redFinding_redThreshold_exits0() {
         setupRedFinding();
         int exit = run(new ScanCommand(mockClient, mockResolver),
-                "--pom", tempDir.resolve("pom.xml").toString(),
+                "--source", tempDir.resolve("pom.xml").toString(),
                 "--threshold", "RED", "--fail-on", "WARN");
         assertThat(exit).isEqualTo(0);
     }
@@ -173,7 +173,7 @@ class ScanCommandTest {
     void failOnNever_redFinding_redThreshold_exits0() {
         setupRedFinding();
         int exit = run(new ScanCommand(mockClient, mockResolver),
-                "--pom", tempDir.resolve("pom.xml").toString(),
+                "--source", tempDir.resolve("pom.xml").toString(),
                 "--threshold", "RED", "--fail-on", "NEVER");
         assertThat(exit).isEqualTo(0);
     }
@@ -193,7 +193,7 @@ class ScanCommandTest {
         when(mockClient.fetchMetadata(LIB_A_PREV)).thenReturn(prev);
 
         int exit = run(new ScanCommand(mockClient, mockResolver),
-                "--pom", tempDir.resolve("pom.xml").toString(),
+                "--source", tempDir.resolve("pom.xml").toString(),
                 "--threshold", "RED", "--fail-on", "FAIL");
         assertThat(exit).isEqualTo(0); // YELLOW < RED threshold → no failure
     }
@@ -213,7 +213,7 @@ class ScanCommandTest {
         when(mockClient.fetchMetadata(LIB_A_PREV)).thenReturn(prev);
 
         int exit = run(new ScanCommand(mockClient, mockResolver),
-                "--pom", tempDir.resolve("pom.xml").toString(),
+                "--source", tempDir.resolve("pom.xml").toString(),
                 "--threshold", "YELLOW", "--fail-on", "FAIL");
         assertThat(exit).isEqualTo(1); // YELLOW >= YELLOW threshold → fail
     }
@@ -222,7 +222,7 @@ class ScanCommandTest {
     void noDependencies_exits0() {
         when(mockResolver.resolve(any())).thenReturn(List.of());
         int exit = run(new ScanCommand(mockClient, mockResolver),
-                "--pom", tempDir.resolve("pom.xml").toString());
+                "--source", tempDir.resolve("pom.xml").toString());
         assertThat(exit).isEqualTo(0);
     }
 
@@ -239,7 +239,7 @@ class ScanCommandTest {
         System.setOut(new PrintStream(outBytes));
         try {
             run(new ScanCommand(mockClient, mockResolver),
-                    "--pom", tempDir.resolve("pom.xml").toString(),
+                    "--source", tempDir.resolve("pom.xml").toString(),
                     "--output", "JSON");
         } finally {
             System.setOut(origOut);
@@ -270,7 +270,7 @@ class ScanCommandTest {
         System.setOut(new java.io.PrintStream(outBytes));
         try {
             run(new ScanCommand(mockClient, mockResolver),
-                    "--pom", tempDir.resolve("pom.xml").toString(),
+                    "--source", tempDir.resolve("pom.xml").toString(),
                     "--output", "MD");
         } finally {
             System.setOut(origOut);
@@ -291,7 +291,7 @@ class ScanCommandTest {
         System.setErr(new java.io.PrintStream(errBytes));
         try {
             int exit = run(new ScanCommand(mockClient, mockResolver),
-                    "--pom", tempDir.resolve("pom.xml").toString(),
+                    "--source", tempDir.resolve("pom.xml").toString(),
                     "--output", "MD",
                     "--threshold", "RED",
                     "--fail-on", "WARN");

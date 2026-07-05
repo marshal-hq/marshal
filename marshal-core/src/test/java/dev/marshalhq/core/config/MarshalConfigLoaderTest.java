@@ -20,7 +20,6 @@ class MarshalConfigLoaderTest {
         assertThat(config.getScan().getDepth()).isEqualTo(-1);
         assertThat(config.getThresholds().getFailOn()).isEqualTo("red");
         assertThat(config.getThresholds().getWarnOn()).isEqualTo("orange");
-        assertThat(config.getAllowlist().getPackages()).isEmpty();
         assertThat(config.getRules().getDisabled()).isEmpty();
     }
 
@@ -47,23 +46,19 @@ class MarshalConfigLoaderTest {
     }
 
     @Test
-    void allowlistWildcardMatchesGroupPrefix(@TempDir Path tempDir) throws IOException {
+    void legacyAllowlistBlockIsIgnoredNotAnError(@TempDir Path tempDir) throws IOException {
+        // The allowlist landmine (groupId wildcards) is removed from marshal.yml — the
+        // whitelist now lives in marshal-whitelist.yml. An old config that still carries
+        // an allowlist block must load without error (unknown keys are ignored).
         Path configFile = tempDir.resolve("marshal.yml");
         Files.writeString(configFile, """
             version: 1
             allowlist:
               packages:
                 - "org.springframework:*"
-                - "com.fasterxml.jackson:jackson-databind"
             """);
 
-        MarshalConfig config = MarshalConfigLoader.load(configFile);
-
-        assertThat(config.getAllowlist().isAllowed("org.springframework:spring-core")).isTrue();
-        assertThat(config.getAllowlist().isAllowed("org.springframework:spring-boot")).isTrue();
-        assertThat(config.getAllowlist().isAllowed("com.fasterxml.jackson:jackson-databind")).isTrue();
-        assertThat(config.getAllowlist().isAllowed("com.fasterxml.jackson:jackson-core")).isFalse();
-        assertThat(config.getAllowlist().isAllowed("org.apache.commons:commons-lang3")).isFalse();
+        assertThatNoException().isThrownBy(() -> MarshalConfigLoader.load(configFile));
     }
 
     @Test
@@ -73,13 +68,13 @@ class MarshalConfigLoaderTest {
             version: 1
             rules:
               disabled:
-                - TYPOSQUAT_PROXIMITY
-                - MISSING_SIGNATURE
+                - MAJOR-JUMP
+                - MISSING-SIG
             """);
 
         MarshalConfig config = MarshalConfigLoader.load(configFile);
         assertThat(config.getRules().getDisabled())
-            .containsExactly("TYPOSQUAT_PROXIMITY", "MISSING_SIGNATURE");
+            .containsExactly("MAJOR-JUMP", "MISSING-SIG");
     }
 
     @Test
@@ -89,13 +84,62 @@ class MarshalConfigLoaderTest {
             version: 1
             rules:
               overrides:
-                INSTALL_SCRIPT_ADDED:
+                DEP-EXPLOSION:
                   weight: 60
             """);
 
         MarshalConfig config = MarshalConfigLoader.load(configFile);
-        assertThat(config.getRules().getOverrides()).containsKey("INSTALL_SCRIPT_ADDED");
-        assertThat(config.getRules().getOverrides().get("INSTALL_SCRIPT_ADDED").getWeight()).isEqualTo(60);
+        assertThat(config.getRules().getOverrides()).containsKey("DEP-EXPLOSION");
+        assertThat(config.getRules().getOverrides().get("DEP-EXPLOSION").getWeight()).isEqualTo(60);
+    }
+
+    @Test
+    void unknownDisabledRuleIdThrows(@TempDir Path tempDir) throws IOException {
+        Path configFile = tempDir.resolve("marshal.yml");
+        Files.writeString(configFile, """
+            version: 1
+            rules:
+              disabled:
+                - NOT_A_RULE
+            """);
+
+        assertThatThrownBy(() -> MarshalConfigLoader.load(configFile))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("NOT_A_RULE")
+            .hasMessageContaining("rules.disabled");
+    }
+
+    @Test
+    void unknownOverrideRuleIdThrows(@TempDir Path tempDir) throws IOException {
+        Path configFile = tempDir.resolve("marshal.yml");
+        Files.writeString(configFile, """
+            version: 1
+            rules:
+              overrides:
+                MISSING_SIG:
+                  weight: 40
+            """);
+
+        assertThatThrownBy(() -> MarshalConfigLoader.load(configFile))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("MISSING_SIG")
+            .hasMessageContaining("rules.overrides");
+    }
+
+    @Test
+    void negativeOverrideWeightThrows(@TempDir Path tempDir) throws IOException {
+        Path configFile = tempDir.resolve("marshal.yml");
+        Files.writeString(configFile, """
+            version: 1
+            rules:
+              overrides:
+                DEP-EXPLOSION:
+                  weight: -5
+            """);
+
+        assertThatThrownBy(() -> MarshalConfigLoader.load(configFile))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("DEP-EXPLOSION");
     }
 
     @Test

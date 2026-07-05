@@ -20,6 +20,7 @@ import org.apache.maven.model.building.FileModelSource;
 import org.apache.maven.model.building.ModelBuilder;
 import org.apache.maven.model.building.ModelBuildingException;
 import org.apache.maven.model.building.ModelBuildingRequest;
+import org.apache.maven.model.building.ModelBuildingResult;
 import org.apache.maven.model.building.ModelSource;
 import org.apache.maven.model.resolution.ModelResolver;
 import org.apache.maven.model.resolution.UnresolvableModelException;
@@ -55,9 +56,7 @@ public class PomDependencyResolver implements DependencyResolver {
     }
 
     public PomDependencyResolver(Collection<DependencyScope> includedScopes) {
-        this.includedScopes = includedScopes.isEmpty()
-                ? EnumSet.noneOf(DependencyScope.class)
-                : EnumSet.copyOf(includedScopes);
+        this.includedScopes = includedScopes.isEmpty() ? EnumSet.noneOf(DependencyScope.class) : EnumSet.copyOf(includedScopes);
         this.system = new RepositorySystemSupplier().get();
         this.session = newSession(system);
         this.repos = List.of(new RemoteRepository.Builder("central", "default", "https://repo1.maven.org/maven2/").build());
@@ -73,28 +72,30 @@ public class PomDependencyResolver implements DependencyResolver {
             req.setProcessPlugins(false);
             req.setValidationLevel(ModelBuildingRequest.VALIDATION_LEVEL_MINIMAL);
             model = MODEL_BUILDER.build(req).getEffectiveModel();
-        } catch (ModelBuildingException e) {
+        }
+        catch (ModelBuildingException e) {
             // Validation errors (e.g. missing version) produce a partial model that is still usable.
-            if (e.getResult() != null && e.getResult().getEffectiveModel() != null) {
-                model = e.getResult().getEffectiveModel();
+            ModelBuildingResult result = e.getResult();
+            if (result != null && result.getEffectiveModel() != null) {
+                model = result.getEffectiveModel();
                 log.debug("Non-fatal model building problems for {}: {}", pomPath, e.getMessage());
             }
             else {
                 // Total failure — no usable model. NOT the same as a pom with zero deps (S06);
                 // partial models with unresolvable versions are handled below as UNRESOLVED.
-                throw new ResolutionException(
-                        "could not resolve dependencies for " + pomPath + ": " + e.getMessage());
+                throw new ResolutionException("could not resolve dependencies for " + pomPath + ": " + e.getMessage());
             }
-        } catch (ResolutionException e) {
+        }
+        catch (ResolutionException e) {
             throw e;
-        } catch (Exception e) {
-            throw new ResolutionException(
-                    "could not resolve dependencies for " + pomPath + ": " + e.getMessage());
+        }
+        catch (Exception e) {
+            throw new ResolutionException("could not resolve dependencies for " + pomPath + ": " + e.getMessage());
         }
 
         List<Coordinates> result = new ArrayList<>();
         for (Dependency dep : model.getDependencies()) {
-            if (!isIncludedScope(dep.getScope())) {
+            if (isExcludedScope(dep.getScope())) {
                 continue;
             }
             result.add(new Coordinates(dep.getGroupId(), dep.getArtifactId(), effectiveVersion(dep)));
@@ -107,7 +108,7 @@ public class PomDependencyResolver implements DependencyResolver {
                 if ("import".equals(dep.getScope()) && "pom".equals(dep.getType())) {
                     continue;
                 }
-                if (!isIncludedScope(dep.getScope())) {
+                if (isExcludedScope(dep.getScope())) {
                     continue;
                 }
                 result.add(new Coordinates(dep.getGroupId(), dep.getArtifactId(), effectiveVersion(dep)));
@@ -117,12 +118,10 @@ public class PomDependencyResolver implements DependencyResolver {
         return result;
     }
 
-    private boolean isIncludedScope(String scope) {
+    private boolean isExcludedScope(String scope) {
         // null scope means compile (Maven default)
-        DependencyScope effective = scope == null
-                ? DependencyScope.COMPILE
-                : DependencyScope.from(scope).orElse(null);
-        return effective != null && includedScopes.contains(effective);
+        DependencyScope effective = scope == null ? DependencyScope.COMPILE : DependencyScope.from(scope).orElse(null);
+        return effective == null || !includedScopes.contains(effective);
     }
 
     private static String effectiveVersion(Dependency dep) {
@@ -141,8 +140,7 @@ public class PomDependencyResolver implements DependencyResolver {
         return session;
     }
 
-    @SuppressWarnings("deprecation")
-    private static final class AetherModelResolver implements ModelResolver {
+    @SuppressWarnings("deprecation") private static final class AetherModelResolver implements ModelResolver {
 
         private final RepositorySystem system;
         private final RepositorySystemSession session;
@@ -155,14 +153,14 @@ public class PomDependencyResolver implements DependencyResolver {
         }
 
         @Override
-        public ModelSource resolveModel(String groupId, String artifactId, String version)
-                throws UnresolvableModelException {
+        public ModelSource resolveModel(String groupId, String artifactId, String version) throws UnresolvableModelException {
             try {
                 DefaultArtifact pom = new DefaultArtifact(groupId, artifactId, "", "pom", version);
                 ArtifactRequest request = new ArtifactRequest(pom, repos, null);
                 ArtifactResult result = system.resolveArtifact(session, request);
                 return new FileModelSource(result.getArtifact().getFile());
-            } catch (ArtifactResolutionException e) {
+            }
+            catch (ArtifactResolutionException e) {
                 throw new UnresolvableModelException(e.getMessage(), groupId, artifactId, version, e);
             }
         }
@@ -171,24 +169,25 @@ public class PomDependencyResolver implements DependencyResolver {
         public ModelSource resolveModel(Parent parent) throws UnresolvableModelException {
             try {
                 return resolveModel(parent.getGroupId(), parent.getArtifactId(), parent.getVersion());
-            } catch (UnresolvableModelException e) {
-                log.debug("Parent {}:{}:{} not resolvable, continuing without it",
-                        parent.getGroupId(), parent.getArtifactId(), parent.getVersion());
+            }
+            catch (UnresolvableModelException e) {
+                log.debug("Parent {}:{}:{} not resolvable, continuing without it", parent.getGroupId(), parent.getArtifactId(),
+                        parent.getVersion());
                 return stubPomSource(parent.getGroupId(), parent.getArtifactId());
             }
         }
 
         private static ModelSource stubPomSource(String groupId, String artifactId) {
-            String xml = "<?xml version=\"1.0\"?><project><modelVersion>4.0.0</modelVersion>"
-                    + "<groupId>" + groupId + "</groupId>"
-                    + "<artifactId>" + artifactId + "</artifactId>"
-                    + "<version>STUB</version></project>";
+            String xml = "<?xml version=\"1.0\"?><project><modelVersion>4.0.0</modelVersion>" + "<groupId>" + groupId + "</groupId>"
+                    + "<artifactId>" + artifactId + "</artifactId>" + "<version>STUB</version></project>";
             byte[] bytes = xml.getBytes(StandardCharsets.UTF_8);
             return new ModelSource() {
+
                 @Override
                 public InputStream getInputStream() {
                     return new ByteArrayInputStream(bytes);
                 }
+
                 @Override
                 public String getLocation() {
                     return groupId + ":" + artifactId + ":STUB";

@@ -1,0 +1,16 @@
+# Marshal-maintained whitelist: the frozen baseline shipped in the jar.
+#
+# Curated known-good coordinates, each pinned to a full groupId:artifactId:version.
+# Wildcards and version-less entries are rejected here too. This is the offline,
+# zero-config baseline. The live signed copy at marshalhq.dev can refresh it at
+# runtime, and whichever copy has the newest `updated` timestamp wins.
+#
+# `updated` does real work: it drives that selection and, once the file is signed,
+# can't be forged upward without the release private key. Bump it on every edit.
+version: 1
+updated: "2026-06-23T00:00:00Z"
+entries:
+  - gav: "org.springframework:spring-core:6.1.5"
+    reason: "Top-200 Maven Central package, verified maintainer + GPG history"
+  - gav: "com.fasterxml.jackson.core:jackson-databind:2.17.0"
+    reason: "Top-200 Maven Central package, verified maintainer + GPG history"

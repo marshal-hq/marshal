@@ -8,7 +8,6 @@ public class MarshalConfig {
     private ScanConfig scan = new ScanConfig();
     private RulesConfig rules = new RulesConfig();
     private ThresholdsConfig thresholds = new ThresholdsConfig();
-    private AllowlistConfig allowlist = new AllowlistConfig();
     private List<RegistryConfig> registries = List.of(new RegistryConfig());
     private NotificationConfig notifications = new NotificationConfig();
     private OutputConfig output = new OutputConfig();
@@ -43,14 +42,6 @@ public class MarshalConfig {
 
     public void setThresholds(ThresholdsConfig thresholds) {
         this.thresholds = thresholds;
-    }
-
-    public AllowlistConfig getAllowlist() {
-        return allowlist;
-    }
-
-    public void setAllowlist(AllowlistConfig allowlist) {
-        this.allowlist = allowlist;
     }
 
     public List<RegistryConfig> getRegistries() {
