@@ -1,0 +1,9 @@
+version: 1
+entries:
+  - gav: "com.acme:internal-billing-lib:4.2.1"
+    reason: "Internal artifact, private registry, vetted by platform team"
+    added_by: "usman"
+    added_on: "2026-06-22"
+    expires: "2026-12-22"
+
+# first_party: reserved

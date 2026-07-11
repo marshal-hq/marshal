@@ -13,6 +13,7 @@ import java.nio.file.Paths;
 import java.util.Optional;
 
 public class MarshalConfigLoader {
+
     private static final Logger log = LoggerFactory.getLogger(MarshalConfigLoader.class);
     private static final String CONFIG_FILENAME = "marshal.yml";
     private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory())
@@ -62,7 +63,8 @@ public class MarshalConfigLoader {
         try {
             MarshalConfig config = YAML.readValue(path.toFile(), MarshalConfig.class);
             validateVersion(config, path);
-            config = resolveEnvVars(config);
+            RulesConfigValidator.validate(config.getRules());
+            resolveEnvVars(config);
             return Optional.of(config);
         } catch (IOException e) {
             log.warn("Failed to parse config file {}: {}", path, e.getMessage());
@@ -72,9 +74,11 @@ public class MarshalConfigLoader {
 
     private static void validateVersion(MarshalConfig config, Path path) {
         if (config.getVersion() != 1) {
-            throw new IllegalArgumentException(
-                "Unsupported marshal.yml version: " + config.getVersion() +
-                " in " + path + ". Only version 1 is supported.");
+            throw new IllegalArgumentException("Unsupported marshal.yml version: "
+                    + config.getVersion()
+                    + " in "
+                    + path
+                    + ". Only version 1 is supported.");
         }
     }
 
@@ -82,7 +86,7 @@ public class MarshalConfigLoader {
      * Resolve ${ENV_VAR} placeholders in string config values.
      * Currently handles slack webhook and email fields.
      */
-    private static MarshalConfig resolveEnvVars(MarshalConfig config) {
+    private static void resolveEnvVars(MarshalConfig config) {
         var slack = config.getNotifications().getSlack();
         if (slack.getWebhook() != null && slack.getWebhook().startsWith("${")) {
             String envVar = slack.getWebhook().replaceAll("^\\$\\{(.+)}$", "$1");
@@ -90,6 +94,5 @@ public class MarshalConfigLoader {
             if (value != null) slack.setWebhook(value);
             else slack.setWebhook("");
         }
-        return config;
     }
 }

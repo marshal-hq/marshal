@@ -167,7 +167,7 @@ class GraphResolverScoringIT {
         try {
             ScanCommand cmd = new ScanCommand(mockClient,
                     new PomDependencyResolver(EnumSet.of(DependencyScope.COMPILE)));
-            int exit = new CommandLine(cmd).execute("--pom", pom.toString(), "--output", "JSON");
+            int exit = new CommandLine(cmd).execute("--source", pom.toString(), "--output", "JSON");
 
             assertThat(exit).isEqualTo(0);   // highest is dep-y YELLOW (25) < RED threshold
             assertFullGraphScores(scoresByPackage());
@@ -187,7 +187,7 @@ class GraphResolverScoringIT {
         ScanCommand cmd = new ScanCommand(mockClient,
                 new GradleDependencyResolver(EnumSet.of(DependencyScope.COMPILE), true));
         int exit = new CommandLine(cmd).execute(
-                "--build-file", project.resolve("build.gradle.kts").toString(),
+                "--source", project.resolve("build.gradle.kts").toString(),
                 "--output", "JSON");
 
         assertThat(exit).isEqualTo(0);

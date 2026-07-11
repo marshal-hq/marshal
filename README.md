@@ -58,10 +58,10 @@ curl -fsSL https://github.com/marshal-hq/marshal/releases/download/v0.1.0/marsha
   -o marshal.jar
 
 # Scan a Maven project
-java -jar marshal.jar scan --pom pom.xml
+java -jar marshal.jar scan --source pom.xml
 
 # Scan a Gradle project (Marshal runs your ./gradlew)
-java -jar marshal.jar scan --build-file build.gradle.kts
+java -jar marshal.jar scan --source build.gradle.kts
 ```
 
 ## Using Marshal
@@ -82,11 +82,13 @@ fails, the check fails rather than passing silently. A scanner that cannot
 analyze your project should not report it as clean.
 
 **Locally, before you commit.** Scan any project from the command line. Point
-Marshal at a Maven pom or a Gradle build file:
+Marshal at a Maven pom, a Gradle build file, or a project directory — the build
+tool is detected from the path:
 
 ```bash
-java -jar marshal.jar scan --pom pom.xml             # Maven
-java -jar marshal.jar scan --build-file build.gradle.kts   # Gradle
+java -jar marshal.jar scan --source pom.xml             # Maven
+java -jar marshal.jar scan --source build.gradle.kts    # Gradle
+java -jar marshal.jar scan --source .                   # detect from current directory
 ```
 
 `marshal diff` compares two states and reports only the new risk, which is what
@@ -99,9 +101,9 @@ java -jar marshal.jar diff --base old/build.gradle.kts --head build.gradle.kts
 Pick an output format depending on where the result goes:
 
 ```bash
-java -jar marshal.jar scan --pom pom.xml                 # human-readable terminal output
-java -jar marshal.jar scan --pom pom.xml --output json   # for CI and scripting
-java -jar marshal.jar scan --pom pom.xml --output md      # markdown, e.g. for PR comments
+java -jar marshal.jar scan --source pom.xml                 # human-readable terminal output
+java -jar marshal.jar scan --source pom.xml --output json   # for CI and scripting
+java -jar marshal.jar scan --source pom.xml --output md      # markdown, e.g. for PR comments
 ```
 
 Marshal exits with a non-zero code when a finding reaches your `fail-on`

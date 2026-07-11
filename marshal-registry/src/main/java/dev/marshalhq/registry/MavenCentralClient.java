@@ -66,8 +66,19 @@ public class MavenCentralClient {
     }
 
     /**
-     * Returns version strings for the given artifact, most recent first.
-     * Result is served from the cache when available; fetched and cached on miss.
+     * Returns version strings for the given artifact, most recent first. Served from
+     * the cache when available; fetched and cached on miss.
+     * <p>
+     * Under a batch scan the search endpoint sits behind a WAF that answers sustained
+     * load with an HTML throttle page instead of JSON, sometimes carrying a 200. We only
+     * parse a genuine 200 body; any other status returns an empty list and is logged at
+     * debug, so an exhausted throttle no longer surfaces as a WARN with a Jackson stack
+     * trace on the leading {@code '<'}.
+     * <p>
+     * A throttled response is never cached. Only a real 200 is stored, even when it
+     * carries zero docs, matching the sentinel discipline in {@link #fetchMetadata} —
+     * caching an empty throttle result would make the artifact look version-less for the
+     * full TTL and quietly disable the previous-version rules.
      */
     public List<String> getVersionHistory(String groupId, String artifactId) {
         if (cache != null) {
@@ -84,7 +95,13 @@ public class MavenCentralClient {
                     .header("User-Agent", "marshal-cli/0.1.0")
                     .timeout(REQUEST_TIMEOUT)
                     .GET().build();
-            JsonNode root = mapper.readTree(sendWithRetry(req).body());
+            HttpResponse<String> resp = sendWithRetry(req);
+            if (resp.statusCode() != 200) {
+                log.debug("Version history for {}:{} returned HTTP {} (likely throttled) — treating as no history",
+                        groupId, artifactId, resp.statusCode());
+                return Collections.emptyList();
+            }
+            JsonNode root = mapper.readTree(resp.body());
             List<String> versions = new ArrayList<>();
             for (JsonNode doc : root.path("response").path("docs")) {
                 versions.add(doc.path("v").asText());
@@ -95,7 +112,7 @@ public class MavenCentralClient {
             return versions;
         }
         catch (Exception e) {
-            log.warn("Failed to fetch version history for {}:{} — {}", groupId, artifactId, e.getMessage());
+            log.debug("Failed to fetch version history for {}:{} — {}", groupId, artifactId, e.getMessage());
             return Collections.emptyList();
         }
     }
@@ -215,13 +232,18 @@ public class MavenCentralClient {
     }
 
     /**
-     * Retries on HTTP 429 with exponential backoff: 500 ms then 1000 ms.
+     * Sends {@code req}, retrying the statuses that mean "busy, try again" with
+     * exponential backoff: 500 ms then 1000 ms, up to two retries. Alongside 429 this
+     * covers 502/503/504, which is what the search WAF returns when it sheds load —
+     * a short backoff often gets JSON on the next attempt instead of a throttle page.
+     * Once retries are exhausted the last response is returned as-is for the caller to
+     * status-check; a 4xx/5xx is never mistaken for a body worth parsing.
      */
     private HttpResponse<String> sendWithRetry(HttpRequest req) throws IOException, InterruptedException {
         int attempt = 0;
         while (true) {
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() == 429 && attempt < 2) {
+            if (isRetryableStatus(resp.statusCode()) && attempt < 2) {
                 Thread.sleep(500L << attempt);
                 attempt++;
             }
@@ -229,6 +251,10 @@ public class MavenCentralClient {
                 return resp;
             }
         }
+    }
+
+    private static boolean isRetryableStatus(int status) {
+        return status == 429 || status == 502 || status == 503 || status == 504;
     }
 
     /**

@@ -29,34 +29,44 @@ public class TerminalReporter implements Reporter {
     private final int width;
     private final boolean showAdvisory;
     private final boolean showUnresolved;
+    private final boolean showSuppressed;
 
     public TerminalReporter() {
-        this(detectWidth(), false, false);
+        this(detectWidth(), false, false, false);
     }
 
     public TerminalReporter(boolean showAdvisory) {
-        this(detectWidth(), showAdvisory, false);
+        this(detectWidth(), showAdvisory, false, false);
     }
 
     public TerminalReporter(boolean showAdvisory, boolean showUnresolved) {
-        this(detectWidth(), showAdvisory, showUnresolved);
+        this(detectWidth(), showAdvisory, showUnresolved, false);
+    }
+
+    public TerminalReporter(boolean showAdvisory, boolean showUnresolved, boolean showSuppressed) {
+        this(detectWidth(), showAdvisory, showUnresolved, showSuppressed);
     }
 
     /**
      * Package-private: use a fixed width in tests for deterministic assertions.
      */
     TerminalReporter(int width) {
-        this(width, false, false);
+        this(width, false, false, false);
     }
 
     TerminalReporter(int width, boolean showAdvisory) {
-        this(width, showAdvisory, false);
+        this(width, showAdvisory, false, false);
     }
 
     TerminalReporter(int width, boolean showAdvisory, boolean showUnresolved) {
+        this(width, showAdvisory, showUnresolved, false);
+    }
+
+    TerminalReporter(int width, boolean showAdvisory, boolean showUnresolved, boolean showSuppressed) {
         this.width = width;
         this.showAdvisory = showAdvisory;
         this.showUnresolved = showUnresolved;
+        this.showSuppressed = showSuppressed;
     }
 
     @Override
@@ -129,6 +139,33 @@ public class TerminalReporter implements Reporter {
                     unknownCount,
                     unknownCount == 1 ? "dependency" : "dependencies");
         }
+
+        // ── SUPPRESSED notice ────────────────────────────────────────────────────
+        // Default view: a single line, so the whitelist's noise reduction holds.
+        // --show-suppressed: expand each suppressed finding for active auditing.
+        long suppressedCount = report.suppressedCount();
+        if (suppressedCount > 0) {
+            if (showSuppressed) {
+                out.println();
+                out.printf("%d %s suppressed by whitelist:%n",
+                        suppressedCount, suppressedCount == 1 ? "finding" : "findings");
+                for (Finding f : report.suppressed()) {
+                    out.println(Ansi.AUTO.string(findingRow(f)));
+                    out.println(Ansi.AUTO.string(suppressionLine(f)));
+                }
+            }
+            else {
+                out.printf("%d %s suppressed by whitelist (--show-suppressed to view)%n",
+                        suppressedCount, suppressedCount == 1 ? "finding" : "findings");
+            }
+        }
+    }
+
+    private static String suppressionLine(Finding f) {
+        var info = f.suppression();
+        String list = info != null ? info.matchedList() : "?";
+        String reason = info != null && info.reason() != null ? info.reason() : "";
+        return "@|fg(245)     ↳ suppressed by " + list + " whitelist — " + reason + "|@";
     }
 
     // ── private helpers ────────────────────────────────────────────────────────

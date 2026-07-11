@@ -112,7 +112,7 @@ class EndToEndCliTest {
 
     private int runScan(String... extraArgs) {
         ScanCommand cmd = new ScanCommand(mockClient, mockResolver);
-        String[] baseArgs = { "--pom", tempDir.resolve("pom.xml").toString() };
+        String[] baseArgs = { "--source", tempDir.resolve("pom.xml").toString() };
         String[] allArgs = new String[baseArgs.length + extraArgs.length];
         System.arraycopy(baseArgs, 0, allArgs, 0, baseArgs.length);
         System.arraycopy(extraArgs, 0, allArgs, baseArgs.length, extraArgs.length);
@@ -131,10 +131,10 @@ class EndToEndCliTest {
         return new CommandLine(cmd).execute(allArgs);
     }
 
-    /** Scan routed through the Gradle resolver (via --build-file), mocked like Maven. */
+    /** Scan routed through the Gradle resolver (via a build.gradle.kts --source), mocked like Maven. */
     private int runGradleScan(String... extraArgs) {
         ScanCommand cmd = new ScanCommand(mockClient, mockGradleResolver);
-        String[] baseArgs = { "--build-file", tempDir.resolve("build.gradle.kts").toString() };
+        String[] baseArgs = { "--source", tempDir.resolve("build.gradle.kts").toString() };
         String[] allArgs = new String[baseArgs.length + extraArgs.length];
         System.arraycopy(baseArgs, 0, allArgs, 0, baseArgs.length);
         System.arraycopy(extraArgs, 0, allArgs, baseArgs.length, extraArgs.length);
@@ -378,5 +378,72 @@ class EndToEndCliTest {
         assertThat(out).contains("### 🔴 HIGH RISK");
         assertThat(out).contains("<sub>Powered by [Marshal]");
         assertThat(out).doesNotContain("[");  // no ANSI
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Whitelist suppression — full path: file at project root → suppressed in output
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    private void writeUserWhitelist(String gav) throws IOException {
+        java.nio.file.Files.writeString(tempDir.resolve("marshal-whitelist.yml"), """
+                version: 1
+                entries:
+                  - gav: "%s"
+                    reason: "Internal artifact, vetted by platform team"
+                    added_by: "usman"
+                    expires: "2099-12-31"
+                """.formatted(gav));
+    }
+
+    @Test
+    void whitelistedRed_isSuppressed_doesNotFailCi_humanShowsNotice() throws IOException {
+        when(mockClient.getVersionHistory("com.example", "lib-a")).thenReturn(List.of("2.0.0", "1.0.0"));
+        when(mockClient.fetchMetadata(LIB_A_200)).thenReturn(redCurrent(LIB_A_200));
+        when(mockClient.fetchMetadata(LIB_A_100)).thenReturn(redPrevious(LIB_A_100));
+        when(mockResolver.resolve(any())).thenReturn(List.of(LIB_A_200));
+        writeUserWhitelist("com.example:lib-a:2.0.0");
+
+        int exit = runScan("--output", "HUMAN", "--threshold", "RED");
+
+        // Suppressed RED must not gate the exit code.
+        assertThat(exit).isEqualTo(0);
+        String out = stdout();
+        assertThat(out).contains("0 flagged");
+        assertThat(out).contains("1 finding suppressed by whitelist");
+        assertThat(out).doesNotContain("RED");
+    }
+
+    @Test
+    void whitelistedRed_jsonRetainsAuditRecord() throws Exception {
+        when(mockClient.getVersionHistory("com.example", "lib-a")).thenReturn(List.of("2.0.0", "1.0.0"));
+        when(mockClient.fetchMetadata(LIB_A_200)).thenReturn(redCurrent(LIB_A_200));
+        when(mockClient.fetchMetadata(LIB_A_100)).thenReturn(redPrevious(LIB_A_100));
+        when(mockResolver.resolve(any())).thenReturn(List.of(LIB_A_200));
+        writeUserWhitelist("com.example:lib-a:2.0.0");
+
+        int exit = runScan("--output", "JSON", "--threshold", "RED");
+
+        assertThat(exit).isEqualTo(0);
+        JsonNode root = MAPPER.readTree(stdout());
+        assertThat(root.get("summary").get("flagged").asInt()).isZero();
+        JsonNode finding = root.get("findings").get(0);
+        assertThat(finding.get("suppressed").asBoolean()).isTrue();
+        assertThat(finding.get("suppressed_by").asText()).isEqualTo("user");
+        assertThat(finding.get("suppression").get("reason").asText()).contains("vetted by platform team");
+    }
+
+    @Test
+    void nonMatchingWhitelistVersion_stillFlagsAndFailsCi() throws IOException {
+        when(mockClient.getVersionHistory("com.example", "lib-a")).thenReturn(List.of("2.0.0", "1.0.0"));
+        when(mockClient.fetchMetadata(LIB_A_200)).thenReturn(redCurrent(LIB_A_200));
+        when(mockClient.fetchMetadata(LIB_A_100)).thenReturn(redPrevious(LIB_A_100));
+        when(mockResolver.resolve(any())).thenReturn(List.of(LIB_A_200));
+        writeUserWhitelist("com.example:lib-a:1.9.0");
+
+        int exit = runScan("--output", "HUMAN", "--threshold", "RED", "--fail-on", "FAIL");
+
+        assertThat(exit).isEqualTo(1);
+        assertThat(stdout()).contains("1 flagged");
+        assertThat(stdout()).doesNotContain("suppressed by whitelist");
     }
 }

@@ -49,7 +49,7 @@ public class SlackNotifier {
         }
 
         List<Finding> qualifying = findings.stream()
-                .filter(f -> !f.isUnresolved() && f.riskLevel() != null)
+                .filter(f -> !f.suppressed() && !f.isUnresolved() && f.riskLevel() != null)
                 .filter(f -> f.riskLevel().ordinal() >= minLevel.ordinal())
                 .toList();
 

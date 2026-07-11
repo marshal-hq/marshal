@@ -232,6 +232,22 @@ class MarkdownReporterTest {
         assertThat(md).doesNotContain("| Signal |");   // no table for yellow
     }
 
+    // ── suppressed exclusion ────────────────────────────────────────────────────────
+
+    @Test
+    void suppressedFinding_excludedFromPrComment() {
+        Finding suppressed = finding("com.acme:internal-lib", "1.0", "2.0", 90, Severity.RED,
+                List.of(signal("NEW-MAINTAINER", 55, "key changed")))
+                .withSuppression(new SuppressionInfo("user", "Internal, vetted", "2026-12-22", "usman"));
+        String md = reporter.render(List.of(suppressed));
+
+        // A whitelisted finding must not surface in the PR comment, and must not flip
+        // the actionable marker that gates whether a comment is posted at all.
+        assertThat(md).doesNotContain("internal-lib");
+        assertThat(md).doesNotContain("🔴 HIGH RISK");
+        assertThat(md).contains("<!-- marshal:actionable=false -->");
+    }
+
     // ── footer ────────────────────────────────────────────────────────────────────
 
     @Test

@@ -105,6 +105,30 @@ public class JsonReporter implements Reporter {
                 }
             }
             node.set("signals", signals);
+
+            // Suppressed findings are always emitted (additive, schema stays 1.0) so the
+            // JSON audit record shows an auditor what was flagged and why it was
+            // suppressed, even when the human view is clean.
+            node.put("suppressed", f.suppressed());
+            if (f.suppressed() && f.suppression() != null) {
+                var info = f.suppression();
+                node.put("suppressed_by", info.matchedList());
+                ObjectNode meta = MAPPER.createObjectNode();
+                meta.put("reason", info.reason());
+                if (info.expires() != null) {
+                    meta.put("expires", info.expires());
+                }
+                else {
+                    meta.putNull("expires");
+                }
+                if (info.addedBy() != null) {
+                    meta.put("added_by", info.addedBy());
+                }
+                else {
+                    meta.putNull("added_by");
+                }
+                node.set("suppression", meta);
+            }
             arr.add(node);
         }
         return arr;

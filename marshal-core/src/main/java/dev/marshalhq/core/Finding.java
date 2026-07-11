@@ -15,6 +15,10 @@ import java.util.List;
  * When {@code hasUnexpandedSubtree} is true the dependency itself resolved and was scored,
  * but its descriptor could not be read, so its own (transitive) dependencies were never
  * walked — that subtree is unscanned and must be surfaced, never treated as clean.
+ * <p>
+ * When {@code suppressed} is true a whitelist matched this finding's GAV. It stays in
+ * the audit record (with {@code suppression} metadata) but drops out of the risk list,
+ * the exit code, and Slack.
  */
 public record Finding(
     Coordinates coordinates,
@@ -25,12 +29,26 @@ public record Finding(
     List<RuleResult> signals,
     boolean isUnresolved,
     boolean hasUnknownMetadata,
-    boolean hasUnexpandedSubtree
+    boolean hasUnexpandedSubtree,
+    boolean suppressed,
+    SuppressionInfo suppression  // null unless suppressed
 ) {
-    public Finding(Coordinates coordinates, String fromVersion, String toVersion, int riskScore,
-            Severity riskLevel, List<RuleResult> signals, boolean isUnresolved, boolean hasUnknownMetadata) {
+    /**
+     * Convenience constructor for the common case: no unexpanded subtree, un-suppressed.
+     * Keeps every existing 8-arg call site (and reporter test) working unchanged.
+     */
+    public Finding(
+        Coordinates coordinates,
+        String fromVersion,
+        String toVersion,
+        int riskScore,
+        Severity riskLevel,
+        List<RuleResult> signals,
+        boolean isUnresolved,
+        boolean hasUnknownMetadata
+    ) {
         this(coordinates, fromVersion, toVersion, riskScore, riskLevel, signals,
-                isUnresolved, hasUnknownMetadata, false);
+                isUnresolved, hasUnknownMetadata, false, false, null);
     }
 
     public static Finding unresolved(Coordinates coordinates) {
@@ -40,6 +58,12 @@ public record Finding(
     /** Copy of this finding marked as having an unscanned transitive subtree. */
     public Finding withUnexpandedSubtree() {
         return new Finding(coordinates, fromVersion, toVersion, riskScore, riskLevel, signals,
-                isUnresolved, hasUnknownMetadata, true);
+                isUnresolved, hasUnknownMetadata, true, suppressed, suppression);
+    }
+
+    /** Returns a copy of this finding marked suppressed by the given whitelist match. */
+    public Finding withSuppression(SuppressionInfo info) {
+        return new Finding(coordinates, fromVersion, toVersion, riskScore, riskLevel,
+                signals, isUnresolved, hasUnknownMetadata, hasUnexpandedSubtree, true, info);
     }
 }
