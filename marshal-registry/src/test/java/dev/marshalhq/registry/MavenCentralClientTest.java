@@ -202,6 +202,69 @@ class MavenCentralClientTest {
         verifyNoInteractions(mockHttp);
     }
 
+    // ── getVersionHistory: throttle / non-JSON hardening ─────────────────────────
+
+    @Test
+    void versionHistory_htmlBodyWith200_returnsEmptyAndNotCached() throws Exception {
+        // The search WAF serves an HTML throttle page, sometimes under a 200.
+        // Jackson chokes on the leading '<'; we swallow it to an empty list.
+        MetadataCache cache = new MetadataCache("jdbc:sqlite::memory:");
+        String throttleHtml = "<html><body>Rate limited</body></html>";
+        doReturn(resp(200, throttleHtml))
+            .when(mockHttp).send(any(HttpRequest.class), any());
+
+        MavenCentralClient client = new MavenCentralClient(mockHttp, cache);
+        List<String> versions = client.getVersionHistory("com.example", "some-lib");
+
+        assertThat(versions).isEmpty();
+        // A parse failure must not poison the cache for the full TTL.
+        assertThat(cache.getVersionHistory("com.example", "some-lib")).isNull();
+    }
+
+    @Test
+    void versionHistory_503ThenOk_retriesAndSucceeds() throws Exception {
+        String versionJson = "{\"response\":{\"docs\":[{\"v\":\"2.0.0\"},{\"v\":\"1.0.0\"}]}}";
+        HttpResponse<String> throttled = resp(503, "");
+        HttpResponse<String> ok        = resp(200, versionJson);
+        doReturn(throttled).doReturn(ok)
+            .when(mockHttp).send(any(HttpRequest.class), any());
+
+        List<String> versions = client().getVersionHistory("com.example", "some-lib");
+
+        assertThat(versions).containsExactly("2.0.0", "1.0.0");
+        verify(mockHttp, times(2)).send(any(HttpRequest.class), any());
+    }
+
+    @Test
+    void versionHistory_503Exhausted_returnsEmptyAndNotCached() throws Exception {
+        MetadataCache cache = new MetadataCache("jdbc:sqlite::memory:");
+        // 503 on every attempt: initial send + two retries = three sends, all throttled.
+        HttpResponse<String> t1 = resp(503, "");
+        HttpResponse<String> t2 = resp(503, "");
+        HttpResponse<String> t3 = resp(503, "");
+        doReturn(t1).doReturn(t2).doReturn(t3)
+            .when(mockHttp).send(any(HttpRequest.class), any());
+
+        MavenCentralClient client = new MavenCentralClient(mockHttp, cache);
+        List<String> versions = client.getVersionHistory("com.example", "some-lib");
+
+        assertThat(versions).isEmpty();
+        verify(mockHttp, times(3)).send(any(HttpRequest.class), any());
+        // An exhausted throttle is a transient failure, never cached.
+        assertThat(cache.getVersionHistory("com.example", "some-lib")).isNull();
+    }
+
+    @Test
+    void versionHistory_normal200WithDocs_parsesInOrder() throws Exception {
+        String versionJson = "{\"response\":{\"docs\":[{\"v\":\"3.1.0\"},{\"v\":\"3.0.0\"},{\"v\":\"2.9.0\"}]}}";
+        doReturn(resp(200, versionJson))
+            .when(mockHttp).send(any(HttpRequest.class), any());
+
+        List<String> versions = client().getVersionHistory("com.example", "some-lib");
+
+        assertThat(versions).containsExactly("3.1.0", "3.0.0", "2.9.0");
+    }
+
     @Test
     void extractKeyId_realCommonsLang3Asc_returnsKnownKeyId() throws Exception {
         byte[] ascBytes;

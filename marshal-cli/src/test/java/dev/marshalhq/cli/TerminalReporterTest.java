@@ -236,6 +236,60 @@ class TerminalReporterTest {
         assertThat(out).doesNotContain("↳");
     }
 
+    // ── suppressed findings ────────────────────────────────────────────────────────
+
+    private static Finding suppressed(String ga, int score, Severity level, String reason) {
+        String[] parts = ga.split(":");
+        Coordinates coords = new Coordinates(parts[0], parts[1], "2.0.0");
+        return new Finding(coords, "1.0.0", "2.0.0", score, level, List.of(), false, false)
+                .withSuppression(new SuppressionInfo("user", reason, "2026-12-22", "usman"));
+    }
+
+    @Test
+    void suppressedFinding_notInRiskListByDefault_summaryLineOnly() {
+        Finding red = finding("com.example:real", "1.0", "2.0", 87, Severity.RED);
+        Finding sup = suppressed("com.acme:internal-lib", 90, Severity.RED, "Internal, vetted");
+
+        String out = render(List.of(red, sup));
+
+        // The suppressed package never appears as a detail row.
+        assertThat(out).doesNotContain("com.acme:internal-lib");
+        assertThat(out).contains("1 finding suppressed by whitelist");
+        assertThat(out).contains("--show-suppressed");
+        // The real RED still gates and renders.
+        assertThat(out).contains("com.example:real");
+        assertThat(out).contains("1 flagged");
+    }
+
+    @Test
+    void suppressedCountUsesPluralForm() {
+        Finding s1 = suppressed("com.acme:a", 90, Severity.RED, "vetted");
+        Finding s2 = suppressed("com.acme:b", 70, Severity.ORANGE, "vetted");
+        String out = render(List.of(s1, s2));
+        assertThat(out).contains("2 findings suppressed by whitelist");
+    }
+
+    @Test
+    void noSuppressedFindings_noticeAbsent() {
+        Finding red = finding("com.example:a", "1.0", "2.0", 87, Severity.RED);
+        String out = render(List.of(red));
+        assertThat(out).doesNotContain("suppressed by whitelist");
+    }
+
+    @Test
+    void showSuppressed_expandsSuppressedFindingsWithReason() {
+        TerminalReporter showSup = new TerminalReporter(WIDTH, false, false, true);
+        Finding sup = suppressed("com.acme:internal-lib", 90, Severity.RED, "Internal, vetted by platform");
+        StringWriter sw = new StringWriter();
+        showSup.report(ScanReport.from(List.of(sup)), new PrintWriter(sw));
+
+        String out = sw.toString();
+        assertThat(out).contains("com.acme:internal-lib");
+        assertThat(out).contains("Internal, vetted by platform");
+        // The hint to use the flag is not shown when the flag is already on.
+        assertThat(out).doesNotContain("--show-suppressed");
+    }
+
     @Test
     void dividerIsFullWidth() {
         String out = render(List.of());

@@ -1,38 +1,30 @@
 package dev.marshalhq.cli;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.Instant;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.Semaphore;
-
+import dev.marshalhq.core.*;
+import dev.marshalhq.core.config.RulesConfig;
+import dev.marshalhq.core.config.RulesConfig.RuleOverride;
+import dev.marshalhq.core.rules.RuleCatalog;
+import dev.marshalhq.core.rules.WeightOverrideRule;
+import dev.marshalhq.core.whitelist.Whitelist;
+import dev.marshalhq.core.whitelist.WhitelistLoader;
+import dev.marshalhq.core.whitelist.Whitelists;
+import dev.marshalhq.registry.MarshalWhitelistProvider;
+import dev.marshalhq.registry.MavenCentralClient;
+import dev.marshalhq.registry.MetadataCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import dev.marshalhq.core.Coordinates;
-import dev.marshalhq.core.Finding;
-import dev.marshalhq.core.PackageContext;
-import dev.marshalhq.core.RuleEngine;
-import dev.marshalhq.core.Severity;
-import dev.marshalhq.core.SignatureStatus;
-import dev.marshalhq.core.TarballAnalysis;
-import dev.marshalhq.core.VersionMetadata;
-import dev.marshalhq.core.rules.DependencyExplosionRule;
-import dev.marshalhq.core.rules.MajorVersionJumpRule;
-import dev.marshalhq.core.rules.MissingSignatureRule;
-import dev.marshalhq.core.rules.NewMaintainerRule;
-import dev.marshalhq.core.rules.RepoUrlChangedRule;
-import dev.marshalhq.core.rules.SignatureDroppedRule;
-import dev.marshalhq.core.rules.YankedVersionRule;
-import dev.marshalhq.registry.MavenCentralClient;
-import dev.marshalhq.registry.MetadataCache;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Semaphore;
 
 /**
  * Static helpers shared by ScanCommand and DiffCommand.
@@ -44,16 +36,31 @@ class CliHelper {
     private CliHelper() {
     }
 
+    /** Default engine with every shipped rule at its built-in weight. */
     static RuleEngine buildEngine() {
-        return new RuleEngine(List.of(
-                new MissingSignatureRule(),
-                new SignatureDroppedRule(),
-                new MajorVersionJumpRule(),
-                new NewMaintainerRule(),
-                new DependencyExplosionRule(),
-                new RepoUrlChangedRule(),
-                new YankedVersionRule()
-        ));
+        return buildEngine(new RulesConfig());
+    }
+
+    /**
+     * Builds the engine from config: rules listed in {@code rules.disabled} are dropped,
+     * and a {@code rules.overrides} weight replaces a rule's built-in score. IDs are
+     * already validated against {@link RuleCatalog} at config load time, so anything left
+     * here is a known rule.
+     */
+    static RuleEngine buildEngine(RulesConfig rules) {
+        Set<String> disabled = Set.copyOf(rules.getDisabled());
+        Map<String, RuleOverride> overrides = rules.getOverrides();
+        List<Rule> active = new ArrayList<>();
+        for (Rule rule : RuleCatalog.defaults()) {
+            if (disabled.contains(rule.id())) {
+                continue;
+            }
+            RuleOverride override = overrides.get(rule.id());
+            active.add(override != null
+                    ? new WeightOverrideRule(rule, override.getWeight())
+                    : rule);
+        }
+        return new RuleEngine(active);
     }
 
     static MavenCentralClient buildProductionClient() {
@@ -103,6 +110,57 @@ class CliHelper {
             }
             return ga.equals(pattern);
         });
+    }
+
+    // ── whitelist suppression ──────────────────────────────────────────────────────
+
+    /**
+     * Builds the active {@link Whitelists} for a scan: the user file ({@code
+     * marshal-whitelist.yml} resolved next to the scanned project) plus the
+     * Marshal-maintained list. {@code frozen} forces the embedded baseline only (no
+     * remote refresh) for reproducible CI; otherwise the freshest verified source wins.
+     */
+    static Whitelists loadWhitelists(Path scanTarget, boolean frozen, Path cachePath) {
+        Whitelist user = WhitelistLoader.loadUser(userWhitelistPath(scanTarget));
+        Whitelist marshal = MarshalWhitelistProvider.active(frozen, cachePath);
+        return new Whitelists(marshal, user);
+    }
+
+    /** The user whitelist lives at the repo root, next to the build file. */
+    static Path userWhitelistPath(Path scanTarget) {
+        Path dir;
+        if (scanTarget == null) {
+            dir = Paths.get(".");
+        }
+        else if (Files.isDirectory(scanTarget)) {
+            dir = scanTarget;
+        }
+        else {
+            dir = scanTarget.getParent();
+        }
+        if (dir == null) {
+            dir = Paths.get(".");
+        }
+        return dir.resolve(WhitelistLoader.USER_FILENAME);
+    }
+
+    /**
+     * Marks a finding suppressed when its exact GAV is whitelisted (and unexpired) and
+     * the engine actually raised it. GREEN and unresolved findings are never suppressed —
+     * there is nothing to suppress, and moving them would corrupt the safe/unresolved
+     * counts. Order is preserved.
+     */
+    static List<Finding> applySuppression(List<Finding> findings, Whitelists whitelists, LocalDate asOf) {
+        List<Finding> out = new ArrayList<>(findings.size());
+        for (Finding f : findings) {
+            if (f.isUnresolved() || f.riskLevel() == null || f.riskLevel() == Severity.GREEN) {
+                out.add(f);
+                continue;
+            }
+            Optional<SuppressionInfo> info = whitelists.decide(f.coordinates().toGav(), asOf);
+            out.add(info.map(f::withSuppression).orElse(f));
+        }
+        return out;
     }
 
     static int computeExitCode(ScanReport report, Severity threshold, FailOn failOn) {

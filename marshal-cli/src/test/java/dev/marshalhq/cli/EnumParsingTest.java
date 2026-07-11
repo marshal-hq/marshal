@@ -126,7 +126,7 @@ class EnumParsingTest {
     void scanCommand_acceptsLowercaseOutput_json() {
         stubGreenScan();
         int exit = new CommandLine(new ScanCommand(mockClient, mockResolver))
-            .execute("--pom", tempDir.resolve("pom.xml").toString(),
+            .execute("--source", tempDir.resolve("pom.xml").toString(),
                      "--output", "json");
         assertThat(exit).isNotEqualTo(2); // 2 = picocli parse error
         assertThat(outBytes.toString()).startsWith("{");
@@ -136,7 +136,7 @@ class EnumParsingTest {
     void scanCommand_acceptsLowercaseThresholdAndFailOn() {
         stubGreenScan();
         int exit = new CommandLine(new ScanCommand(mockClient, mockResolver))
-            .execute("--pom", tempDir.resolve("pom.xml").toString(),
+            .execute("--source", tempDir.resolve("pom.xml").toString(),
                      "--output", "json", "--threshold", "orange", "--fail-on", "warn");
         assertThat(exit).isNotEqualTo(2);
     }
@@ -145,7 +145,7 @@ class EnumParsingTest {
     void scanCommand_acceptsMixedCaseOutput() {
         stubGreenScan();
         int exit = new CommandLine(new ScanCommand(mockClient, mockResolver))
-            .execute("--pom", tempDir.resolve("pom.xml").toString(),
+            .execute("--source", tempDir.resolve("pom.xml").toString(),
                      "--output", "Json");
         assertThat(exit).isNotEqualTo(2);
         assertThat(outBytes.toString()).startsWith("{");
@@ -171,7 +171,7 @@ class EnumParsingTest {
     void scanCommand_acceptsCachePath() {
         stubGreenScan();
         int exit = new CommandLine(new ScanCommand(mockClient, mockResolver))
-            .execute("--pom", tempDir.resolve("pom.xml").toString(),
+            .execute("--source", tempDir.resolve("pom.xml").toString(),
                      "--cache-path", tempDir.resolve("custom.db").toString());
         assertThat(exit).isNotEqualTo(2); // 2 = picocli parse error
     }

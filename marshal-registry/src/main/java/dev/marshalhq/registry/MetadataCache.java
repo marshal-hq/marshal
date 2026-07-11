@@ -53,6 +53,55 @@ public class MetadataCache {
                             cached_at INTEGER NOT NULL
                         )
                     """);
+            // Single-document cache for the Marshal-maintained whitelist: one keyed row,
+            // not per-entry. The whole list refreshes as one unit.
+            st.execute("""
+                        CREATE TABLE IF NOT EXISTS whitelist_cache (
+                            id INTEGER PRIMARY KEY CHECK (id = 0),
+                            yaml TEXT NOT NULL,
+                            updated INTEGER NOT NULL,
+                            cached_at INTEGER NOT NULL
+                        )
+                    """);
+        }
+    }
+
+    // --- single-document whitelist cache ---
+
+    /** A cached whitelist document: its raw YAML, embedded {@code updated} epoch, and cache time. */
+    public record CachedWhitelist(String yaml, long updatedEpochMs, long cachedAtMs) {
+
+        public boolean isFresh() {
+            return System.currentTimeMillis() - cachedAtMs < TTL_MS;
+        }
+    }
+
+    /** The cached whitelist document, or null if none has been stored. Ignores TTL. */
+    public CachedWhitelist getWhitelist() {
+        try (Statement st = conn.createStatement();
+                ResultSet rs = st.executeQuery(
+                        "SELECT yaml, updated, cached_at FROM whitelist_cache WHERE id = 0")) {
+            if (rs.next()) {
+                return new CachedWhitelist(rs.getString("yaml"), rs.getLong("updated"), rs.getLong("cached_at"));
+            }
+        }
+        catch (Exception e) {
+            log.warn("Whitelist cache read failed: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /** Stores the verified whitelist document, replacing any prior copy. */
+    public void putWhitelist(String yaml, long updatedEpochMs) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT OR REPLACE INTO whitelist_cache (id, yaml, updated, cached_at) VALUES (0, ?, ?, ?)")) {
+            ps.setString(1, yaml);
+            ps.setLong(2, updatedEpochMs);
+            ps.setLong(3, System.currentTimeMillis());
+            ps.executeUpdate();
+        }
+        catch (Exception e) {
+            log.warn("Whitelist cache write failed: {}", e.getMessage());
         }
     }
 

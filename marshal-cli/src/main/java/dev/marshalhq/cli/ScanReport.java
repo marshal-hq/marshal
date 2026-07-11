@@ -26,23 +26,31 @@ import java.util.stream.Stream;
  * The {@code flagged} and {@code advisory} lists are sorted by risk score descending.
  */
 public record ScanReport(
-        List<Finding> all,         // every finding, original order (JSON emits all)
-        List<Finding> flagged,     // RED + ORANGE, score desc
-        List<Finding> advisory,    // YELLOW, score desc
-        List<Finding> safe,        // GREEN
-        List<Finding> unresolved
+        List<Finding> all,         // every finding, original order (JSON emits all, incl. suppressed)
+        List<Finding> flagged,     // RED + ORANGE, score desc; suppressed excluded
+        List<Finding> advisory,    // YELLOW, score desc; suppressed excluded
+        List<Finding> safe,        // GREEN; suppressed excluded
+        List<Finding> unresolved,
+        List<Finding> suppressed   // whitelist-suppressed findings; kept only for the audit record
 ) {
 
     public static ScanReport from(List<Finding> findings) {
+        // A whitelist-matched finding must never show up in a risk bucket, gate CI, or
+        // trigger Slack. It lives only in its own bucket and in all(), which the JSON
+        // audit record reads. Every other bucket filters it out (see bySeverityDesc and
+        // the predicates below).
         List<Finding> flagged = bySeverityDesc(findings, EnumSet.of(Severity.RED, Severity.ORANGE));
         List<Finding> advisory = bySeverityDesc(findings, EnumSet.of(Severity.YELLOW));
         List<Finding> safe = findings.stream()
-                .filter(f -> !f.isUnresolved() && f.riskLevel() == Severity.GREEN)
+                .filter(f -> !f.suppressed() && !f.isUnresolved() && f.riskLevel() == Severity.GREEN)
                 .toList();
         List<Finding> unresolved = findings.stream()
-                .filter(Finding::isUnresolved)
+                .filter(f -> !f.suppressed() && f.isUnresolved())
                 .toList();
-        return new ScanReport(List.copyOf(findings), flagged, advisory, safe, unresolved);
+        List<Finding> suppressed = findings.stream()
+                .filter(Finding::suppressed)
+                .toList();
+        return new ScanReport(List.copyOf(findings), flagged, advisory, safe, unresolved, suppressed);
     }
 
     /** Total dependencies scanned (includes unresolved). */
@@ -64,6 +72,10 @@ public record ScanReport(
 
     public int unresolvedCount() {
         return unresolved.size();
+    }
+
+    public int suppressedCount() {
+        return suppressed.size();
     }
 
     /**
@@ -95,31 +107,35 @@ public record ScanReport(
         return sb.toString();
     }
 
-    /** Count of resolved findings at a given severity (unresolved excluded). */
+    /** Count of resolved findings at a given severity (unresolved and suppressed excluded). */
     public long count(Severity level) {
         return all.stream()
-                .filter(f -> !f.isUnresolved() && f.riskLevel() == level)
+                .filter(f -> !f.suppressed() && !f.isUnresolved() && f.riskLevel() == level)
                 .count();
     }
 
     /** Resolved findings whose metadata was incomplete (results may be partial). */
     public long unknownMetadataCount() {
         return all.stream()
-                .filter(f -> !f.isUnresolved() && f.hasUnknownMetadata())
+                .filter(f -> !f.suppressed() && !f.isUnresolved() && f.hasUnknownMetadata())
                 .count();
     }
 
-    /** Worst resolved severity present, used to gate the exit code. */
+    /**
+     * Worst resolved severity present, used to gate the exit code. Suppressed findings
+     * are excluded, because a whitelisted GAV must never fail CI.
+     */
     public Optional<Severity> worstSeverity() {
         return all.stream()
-                .filter(f -> !f.isUnresolved() && f.riskLevel() != null)
+                .filter(f -> !f.suppressed() && !f.isUnresolved() && f.riskLevel() != null)
                 .map(Finding::riskLevel)
                 .max(Comparator.comparingInt(Severity::ordinal));
     }
 
     private static List<Finding> bySeverityDesc(List<Finding> findings, EnumSet<Severity> levels) {
         return findings.stream()
-                .filter(f -> !f.isUnresolved() && f.riskLevel() != null && levels.contains(f.riskLevel()))
+                .filter(f -> !f.suppressed() && !f.isUnresolved()
+                        && f.riskLevel() != null && levels.contains(f.riskLevel()))
                 .sorted(Comparator.comparingInt(Finding::riskScore).reversed())
                 .toList();
     }

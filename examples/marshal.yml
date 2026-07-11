@@ -24,10 +24,8 @@ thresholds:
   fail-on: red         # red | orange | yellow
   warn-on: orange
 
-allowlist:
-  packages: []
-    # - "org.springframework:*"     # trust all Spring packages
-    # - "com.fasterxml.jackson:*"   # trust all Jackson packages
+# The whitelist now lives in marshal-whitelist.yml at the repo root, not here.
+# Entries are pinned to a full groupId:artifactId:version. Wildcards are rejected.
 
 registries:
   - id: central

@@ -22,6 +22,9 @@ inputs:
   comment-on-pr:
     description: 'Post (or update) a risk summary comment on the pull request.'
     default: 'true'
+  update-whitelist:
+    description: 'Refresh the Marshal-maintained whitelist from the signed remote copy. Set to false for reproducible scans pinned to the embedded baseline (also pin marshal-version).'
+    default: 'true'
   slack-webhook:
     description: 'Slack incoming webhook URL. Sends an alert when RED findings are detected.'
     required: false
@@ -35,7 +38,7 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    # Two JDKs coexist (§3.3): the project's build toolchain for ./gradlew, and Java
+    # Two JDKs coexist : the project's build toolchain for ./gradlew, and Java
     # 21 to run the Marshal jar. We never touch the user's JAVA_HOME.
     - name: Detect a pre-installed Java 21
       id: detect-java
@@ -77,4 +80,5 @@ runs:
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
         INPUT_COMMENT_ON_PR: ${{ inputs.comment-on-pr }}
         INPUT_SLACK_WEBHOOK: ${{ inputs.slack-webhook }}
+        INPUT_UPDATE_WHITELIST: ${{ inputs.update-whitelist }}
       run: bash "${{ github.action_path }}/run.sh"
