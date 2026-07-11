@@ -68,6 +68,31 @@ class MarkdownReporterTest {
         assertThat(reporter.render(List.of(unresolved))).contains("<!-- marshal:actionable=true -->");
     }
 
+    @Test
+    void actionableMarker_trueWhenOnlyUnexpandedSubtree() {
+        Finding flagged = finding("com.example:broken", null, "1.0.0", 0, Severity.GREEN, List.of())
+                .withUnexpandedSubtree();
+        assertThat(reporter.render(List.of(flagged))).contains("<!-- marshal:actionable=true -->");
+    }
+
+    @Test
+    void unexpandedSubtree_noteRendered_withGavListed() {
+        Finding flagged = finding("com.example:broken", null, "1.0.0", 0, Severity.GREEN, List.of())
+                .withUnexpandedSubtree();
+        String md = reporter.render(List.of(flagged));
+
+        assertThat(md).contains("could not be expanded");
+        assertThat(md).contains("not scanned; manual review recommended");
+        // GAVs are always listed in the PR-comment surface (the reader cannot re-run with a flag)
+        assertThat(md).contains("`com.example:broken:1.0.0`");
+    }
+
+    @Test
+    void noUnexpandedSubtrees_noteAbsent() {
+        Finding green = finding("a:b", null, "1.0", 4, Severity.GREEN, List.of());
+        assertThat(reporter.render(List.of(green))).doesNotContain("could not be expanded");
+    }
+
     // ── header ────────────────────────────────────────────────────────────────────
 
     @Test

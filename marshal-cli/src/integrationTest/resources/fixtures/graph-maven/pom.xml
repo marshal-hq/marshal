@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Maven fixture for the fixed dependency graph:
+
+    project
+    ├── dep-a  ──> dep-x
+    └── dep-b  ──> dep-x, dep-y
+    dep-x  ──> dep-z
+
+  The Maven resolver now walks the full transitive graph (Aether collectDependencies),
+  so a real resolution yields all five modules: dep-a, dep-b, dep-x, dep-y, dep-z —
+  dep-x/dep-z pinned to one version so there is no conflict-resolution ambiguity.
+
+  Every dep is compile scope (Maven default in the transitive POMs), so nothing is
+  dropped by the default compile+runtime scope filter. The transitive POMs live in the
+  committed local repo under ./repo (poms only — collectDependencies fetches descriptors,
+  not artifacts), so resolution touches no network. The @REPO_URL@ token is replaced with
+  the absolute file: URL of that repo at test time (see GraphResolverScoringIT).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example.marshaltest</groupId>
+    <artifactId>project</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <repositories>
+        <repository>
+            <id>graph-local</id>
+            <url>@REPO_URL@</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.example.marshaltest</groupId>
+            <artifactId>dep-a</artifactId>
+            <version>1.0.0</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.example.marshaltest</groupId>
+            <artifactId>dep-b</artifactId>
+            <version>1.0.0</version>
+            <scope>compile</scope>
+        </dependency>
+    </dependencies>
+</project>

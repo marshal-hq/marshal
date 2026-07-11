@@ -107,6 +107,21 @@ public class TerminalReporter implements Reporter {
             }
         }
 
+        // ── Unexpanded-subtree notice (S06: an unscanned subtree must never look clean) ──
+        long unexpandedCount = report.unexpandedSubtreeCount();
+        if (unexpandedCount > 0) {
+            out.printf("%n%d %s could not be expanded — %s not scanned, manual review recommended%n",
+                    unexpandedCount,
+                    unexpandedCount == 1 ? "dependency subtree" : "dependency subtrees",
+                    unexpandedCount == 1 ? "the dependencies beneath it were" : "the dependencies beneath them were");
+            if (showUnresolved) {
+                for (Finding f : report.unexpandedSubtrees()) {
+                    out.println(Ansi.AUTO.string(
+                            "@|fg(245)  · " + f.coordinates().toGav() + "|@"));
+                }
+            }
+        }
+
         // ── UNKNOWN metadata notice ──────────────────────────────────────────────
         long unknownCount = report.unknownMetadataCount();
         if (unknownCount > 0) {

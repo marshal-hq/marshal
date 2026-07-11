@@ -42,6 +42,10 @@ class TerminalReporterTest {
         return Finding.unresolved(new Coordinates(parts[0], parts[1], "UNRESOLVED"));
     }
 
+    private static Finding withUnexpandedSubtree(String ga, String to, Severity level) {
+        return finding(ga, null, to, 0, level).withUnexpandedSubtree();
+    }
+
     private String render(List<Finding> findings) {
         StringWriter sw = new StringWriter();
         reporter.report(ScanReport.from(findings), new PrintWriter(sw));
@@ -188,6 +192,36 @@ class TerminalReporterTest {
 
         assertThat(sw.toString()).contains("could not be fully resolved");
         assertThat(sw.toString()).contains("· com.example:private-lib");
+    }
+
+    @Test
+    void unexpandedSubtree_surfacesNotice_depStillScored() {
+        Finding flagged = withUnexpandedSubtree("com.example:broken-descriptor", "1.0.0", Severity.GREEN);
+        String out = render(List.of(flagged));
+
+        // The dep itself is counted (scored normally) …
+        assertThat(out).contains("1 dependency");
+        // … but the unscanned subtree must be called out.
+        assertThat(out).contains("could not be expanded");
+        assertThat(out).contains("not scanned, manual review recommended");
+    }
+
+    @Test
+    void unexpandedSubtree_gavListedWhenShowUnresolvedEnabled() {
+        TerminalReporter showUnres = new TerminalReporter(WIDTH, false, true);
+        Finding flagged = withUnexpandedSubtree("com.example:broken-descriptor", "1.0.0", Severity.GREEN);
+        StringWriter sw = new StringWriter();
+        showUnres.report(ScanReport.from(List.of(flagged)), new PrintWriter(sw));
+
+        assertThat(sw.toString()).contains("· com.example:broken-descriptor:1.0.0");
+    }
+
+    @Test
+    void noUnexpandedSubtrees_noticeIsAbsent() {
+        Finding green = finding("com.example:a", null, "1.0", 0, Severity.GREEN);
+        String out = render(List.of(green));
+
+        assertThat(out).doesNotContain("could not be expanded");
     }
 
     @Test

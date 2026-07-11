@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -178,14 +179,22 @@ public class ScanCommand implements Callable<Integer> {
         ).toList());
         executor.shutdown();
 
-        // Step 4: assemble findings
+        // Step 4: assemble findings. A dep whose descriptor could not be read is scored
+        // normally but flagged: its subtree was never walked and must not look clean (S06).
+        Set<String> unexpandedGas = resolver.unexpandedSubtrees().stream()
+                .map(Coordinates::toGa)
+                .collect(Collectors.toSet());
         List<Finding> findings = new ArrayList<>();
         for (Coordinates coords : resolved) {
             VersionMetadata current = metaByGav.getOrDefault(coords.toGav(), CliHelper.stub(coords));
             Coordinates prevCoords = previousCoords.get(coords.toGav());
             VersionMetadata previous = prevCoords != null ? metaByGav.get(prevCoords.toGav()) : null;
             String fromVersion = prevCoords != null ? prevCoords.version() : null;
-            findings.add(CliHelper.toFinding(coords, fromVersion, current, previous, engine, highReps));
+            Finding finding = CliHelper.toFinding(coords, fromVersion, current, previous, engine, highReps);
+            if (unexpandedGas.contains(coords.toGa())) {
+                finding = finding.withUnexpandedSubtree();
+            }
+            findings.add(finding);
         }
         for (Coordinates coords : unresolved) {
             findings.add(Finding.unresolved(coords));

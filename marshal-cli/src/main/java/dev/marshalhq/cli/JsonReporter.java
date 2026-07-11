@@ -88,6 +88,11 @@ public class JsonReporter implements Reporter {
             node.put("risk_score", f.isUnresolved() ? 0 : f.riskScore());
             node.put("risk_level", f.isUnresolved() ? "unresolved"
                     : f.riskLevel().name().toLowerCase());
+            // Additive, emitted only when true: the dep is scored, but its descriptor was
+            // unreadable so its transitive subtree was never walked (unscanned).
+            if (f.hasUnexpandedSubtree()) {
+                node.put("subtree_unexpanded", true);
+            }
 
             ArrayNode signals = MAPPER.createArrayNode();
             if (!f.isUnresolved()) {

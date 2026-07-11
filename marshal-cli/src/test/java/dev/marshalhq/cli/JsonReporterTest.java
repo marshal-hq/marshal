@@ -192,6 +192,25 @@ class JsonReporterTest {
     }
 
     @Test
+    void unexpandedSubtree_markedInFinding() throws Exception {
+        Finding f = finding("com.example:broken", null, "1.0.0", 0, Severity.GREEN, List.of())
+                .withUnexpandedSubtree();
+        JsonNode finding = render(List.of(f)).get("findings").get(0);
+
+        assertThat(finding.get("subtree_unexpanded").asBoolean()).isTrue();
+        // Still scored as a normal dep, not unresolved
+        assertThat(finding.get("risk_level").asText()).isEqualTo("green");
+    }
+
+    @Test
+    void noUnexpandedSubtree_fieldAbsent_keepsSchemaByteCompatible() throws Exception {
+        Finding f = green("com.example:ok");
+        JsonNode finding = render(List.of(f)).get("findings").get(0);
+
+        assertThat(finding.has("subtree_unexpanded")).isFalse();
+    }
+
+    @Test
     void firstSeenDep_fromVersionIsNull() throws Exception {
         Finding f = finding("com.example:new-lib", null, "1.0.0", 87, Severity.RED, List.of());
         JsonNode finding = render(List.of(f)).get("findings").get(0);

@@ -102,6 +102,21 @@ public record ScanReport(
                 .count();
     }
 
+    /**
+     * Findings whose transitive subtree could not be expanded (descriptor unreadable):
+     * the dep itself is scored, but everything beneath it is unscanned. Reported in its
+     * own notice, like unresolved — an unscanned subtree must never look clean (S06).
+     */
+    public List<Finding> unexpandedSubtrees() {
+        return all.stream()
+                .filter(Finding::hasUnexpandedSubtree)
+                .toList();
+    }
+
+    public int unexpandedSubtreeCount() {
+        return unexpandedSubtrees().size();
+    }
+
     /** Resolved findings whose metadata was incomplete (results may be partial). */
     public long unknownMetadataCount() {
         return all.stream()

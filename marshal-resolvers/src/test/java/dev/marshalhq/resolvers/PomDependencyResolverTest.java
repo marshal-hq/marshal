@@ -13,6 +13,13 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
 
+/**
+ * Offline unit tests for the declared-dependency parse layer ({@code directDependencies}):
+ * scope filtering, property/BOM version resolution, and the UNRESOLVED sentinel. The
+ * transitive {@code resolve()} walk needs a repository and is covered in the integration
+ * tier (PomDependencyResolverIntegrationTest against Maven Central; GraphResolverScoringIT
+ * against a local file-repo).
+ */
 class PomDependencyResolverTest {
 
     private PomDependencyResolver resolver;
@@ -43,7 +50,7 @@ class PomDependencyResolverTest {
             </project>
             """);
 
-        List<Coordinates> deps = resolver.resolve(pom);
+        List<Coordinates> deps = resolver.directDependencies(pom);
 
         assertThat(deps).hasSize(1);
         assertThat(deps.get(0).groupId()).isEqualTo("org.apache.commons");
@@ -75,7 +82,7 @@ class PomDependencyResolverTest {
             </project>
             """);
 
-        List<Coordinates> deps = resolver.resolve(pom);
+        List<Coordinates> deps = resolver.directDependencies(pom);
 
         assertThat(deps).hasSize(1);
         assertThat(deps.get(0).version()).isEqualTo("3.13.0");
@@ -103,12 +110,41 @@ class PomDependencyResolverTest {
             </project>
             """);
 
-        List<Coordinates> deps = resolver.resolve(pom);
+        List<Coordinates> deps = resolver.directDependencies(pom);
 
         // Dependency must NOT be silently dropped
         assertThat(deps).hasSize(1);
         assertThat(deps.get(0).groupId()).isEqualTo("org.springframework.boot");
         assertThat(deps.get(0).artifactId()).isEqualTo("spring-boot-starter-web");
+        assertThat(deps.get(0).version()).isEqualTo("UNRESOLVED");
+    }
+
+    @Test
+    void marksMidStringUnresolvablePropertyAsUNRESOLVED(@TempDir Path tempDir) throws IOException {
+        // The unresolved property is NOT at position 0 — "1.${rev}" must still be UNRESOLVED,
+        // not fed onward as a bogus concrete version.
+        Path pom = writePom(tempDir, """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <project xmlns="http://maven.apache.org/POM/4.0.0"
+                     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+                <modelVersion>4.0.0</modelVersion>
+                <groupId>com.example</groupId>
+                <artifactId>test-app</artifactId>
+                <version>1.0.0</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.example</groupId>
+                        <artifactId>flavored-lib</artifactId>
+                        <version>1.${rev}</version>
+                    </dependency>
+                </dependencies>
+            </project>
+            """);
+
+        List<Coordinates> deps = resolver.directDependencies(pom);
+
+        assertThat(deps).hasSize(1);
         assertThat(deps.get(0).version()).isEqualTo("UNRESOLVED");
     }
 
@@ -133,7 +169,7 @@ class PomDependencyResolverTest {
             </project>
             """);
 
-        List<Coordinates> deps = resolver.resolve(pom);
+        List<Coordinates> deps = resolver.directDependencies(pom);
 
         // BOM-managed dep with no version must NOT be dropped
         assertThat(deps).hasSize(1);
@@ -168,7 +204,7 @@ class PomDependencyResolverTest {
             </project>
             """);
 
-        List<Coordinates> deps = resolver.resolve(pom);
+        List<Coordinates> deps = resolver.directDependencies(pom);
 
         assertThat(deps).hasSize(1);
         assertThat(deps.get(0).artifactId()).isEqualTo("commons-lang3");
@@ -202,7 +238,7 @@ class PomDependencyResolverTest {
             </project>
             """);
 
-        List<Coordinates> deps = resolver.resolve(pom);
+        List<Coordinates> deps = resolver.directDependencies(pom);
 
         assertThat(deps).hasSize(1);
         assertThat(deps).noneMatch(c -> c.groupId().equals("javax.servlet"));
@@ -222,7 +258,7 @@ class PomDependencyResolverTest {
             </project>
             """);
 
-        List<Coordinates> deps = resolver.resolve(pom);
+        List<Coordinates> deps = resolver.directDependencies(pom);
         assertThat(deps).isEmpty();
     }
 
@@ -256,7 +292,7 @@ class PomDependencyResolverTest {
             </project>
             """);
 
-        List<Coordinates> deps = resolver.resolve(pom);
+        List<Coordinates> deps = resolver.directDependencies(pom);
 
         assertThat(deps).hasSize(2);
         assertThat(deps).anyMatch(c -> c.artifactId().equals("commons-lang3"));
@@ -275,7 +311,7 @@ class PomDependencyResolverTest {
                 <groupId>com.example
             """);
 
-        assertThatThrownBy(() -> resolver.resolve(pom))
+        assertThatThrownBy(() -> resolver.directDependencies(pom))
                 .isInstanceOf(ResolutionException.class)
                 .hasMessageContaining("could not resolve dependencies");
     }
@@ -311,7 +347,7 @@ class PomDependencyResolverTest {
             </project>
             """);
 
-        List<Coordinates> deps = resolver.resolve(pom);
+        List<Coordinates> deps = resolver.directDependencies(pom);
 
         // All 3 must be present — none silently dropped
         assertThat(deps).hasSize(3);
