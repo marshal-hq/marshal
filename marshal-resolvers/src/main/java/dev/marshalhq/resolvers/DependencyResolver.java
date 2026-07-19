@@ -2,8 +2,10 @@ package dev.marshalhq.resolvers;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import dev.marshalhq.core.Coordinates;
+import dev.marshalhq.core.DependencyPathNode;
 
 /**
  * Common contract for a build-tool dependency resolver: it consumes a build file
@@ -25,5 +27,16 @@ public interface DependencyResolver {
      */
     default List<Coordinates> unexpandedSubtrees() {
         return List.of();
+    }
+
+    /**
+     * Introduced-by paths from the last {@link #resolve(Path)}, keyed by
+     * {@code group:artifact}: every path from a declared direct dependency to that node,
+     * shortest first (see {@link DependencyPathBuilder} for ordering/dedup semantics).
+     * Display metadata only — scoring never reads it. Default is empty for resolvers
+     * (or test doubles) that carry no path data; callers must tolerate absent entries.
+     */
+    default Map<String, List<List<DependencyPathNode>>> dependencyPaths() {
+        return Map.of();
     }
 }

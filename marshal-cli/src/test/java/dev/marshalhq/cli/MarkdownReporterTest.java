@@ -304,6 +304,75 @@ class MarkdownReporterTest {
         assertThat(sw.toString()).contains("<!-- marshal-bot -->");
     }
 
+    // ── introduced-by path row ────────────────────────────────────────────────────
+
+    private static DependencyPathNode hop(String ga, String version, boolean direct) {
+        String[] p = ga.split(":");
+        return new DependencyPathNode(p[0], p[1], version, direct);
+    }
+
+    private static List<List<DependencyPathNode>> transitivePath() {
+        return List.of(List.of(hop("com.example:dep-b", "1.4.0", true),
+                hop("com.foo:bar", "2.0.0", false)));
+    }
+
+    @Test
+    void pathRow_presentForRedAndOrange_shortestOnly() {
+        Finding red = finding("com.foo:bar", "1.0", "2.0.0", 87, Severity.RED,
+                List.of(signal("SIG-DROPPED", 40, "ev"))).withIntroducedBy(transitivePath());
+        Finding orange = finding("com.foo:baz", "1.0", "2.0.0", 62, Severity.ORANGE,
+                List.of(signal("REPO-CHANGED", 20, "ev"))).withIntroducedBy(
+                        List.of(List.of(hop("com.example:dep-b", "1.4.0", true),
+                                hop("com.foo:baz", "2.0.0", false))));
+
+        String md = reporter.render(List.of(red, orange));
+        assertThat(md).contains(
+                "| Path | `com.example:dep-b:1.4.0` (direct) -> `com.foo:bar:2.0.0` |");
+        assertThat(md).contains(
+                "| Path | `com.example:dep-b:1.4.0` (direct) -> `com.foo:baz:2.0.0` |");
+    }
+
+    @Test
+    void pathRow_multiplePaths_countSuffixOnly() {
+        DependencyPathNode target = hop("com.foo:bar", "2.0.0", false);
+        Finding red = finding("com.foo:bar", "1.0", "2.0.0", 87, Severity.RED,
+                List.of(signal("SIG-DROPPED", 40, "ev"))).withIntroducedBy(List.of(
+                        List.of(hop("com.a:a", "1.0.0", true), target),
+                        List.of(hop("com.b:b", "1.0.0", true), target),
+                        List.of(hop("com.b:b", "1.0.0", true), hop("com.m:m", "1.0.0", false), target)));
+
+        String md = reporter.render(List.of(red));
+        assertThat(md).contains(
+                "| Path | `com.a:a:1.0.0` (direct) -> `com.foo:bar:2.0.0` (+2 other paths) |");
+        assertThat(md).doesNotContain("com.m:m"); // alternates never rendered
+    }
+
+    @Test
+    void pathRow_absentForYellowAdvisory_evenWhenShown() {
+        Finding yellow = finding("com.foo:bar", "1.0", "2.0.0", 34, Severity.YELLOW,
+                List.of(signal("MAJOR-JUMP", 15, "ev"))).withIntroducedBy(transitivePath());
+
+        String md = new MarkdownReporter(true).render(List.of(yellow));
+        assertThat(md).contains("ADVISORY"); // rendered in full…
+        assertThat(md).doesNotContain("| Path |"); // …but stays path-less
+    }
+
+    @Test
+    void pathRow_absentForDeclaredDirect() {
+        Finding red = finding("com.example:dep-b", "1.0", "1.4.0", 87, Severity.RED,
+                List.of(signal("SIG-DROPPED", 40, "ev"))).withIntroducedBy(
+                        List.of(List.of(hop("com.example:dep-b", "1.4.0", true))));
+
+        assertThat(reporter.render(List.of(red))).doesNotContain("| Path |");
+    }
+
+    @Test
+    void pathRow_absentWhenNoPathData() {
+        Finding red = finding("com.foo:bar", "1.0", "2.0.0", 87, Severity.RED,
+                List.of(signal("SIG-DROPPED", 40, "ev")));
+        assertThat(reporter.render(List.of(red))).doesNotContain("| Path |");
+    }
+
     // ── ordering ─────────────────────────────────────────────────────────────────
 
     @Test

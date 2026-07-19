@@ -324,6 +324,70 @@ class TerminalReporterTest {
         assertThat(out).doesNotContain("--show-suppressed");
     }
 
+    // ── introduced-by via line ─────────────────────────────────────────────────────
+
+    private static Finding withPaths(Finding f, List<List<DependencyPathNode>> paths) {
+        return f.withIntroducedBy(paths);
+    }
+
+    private static DependencyPathNode hop(String ga, String version, boolean direct) {
+        String[] p = ga.split(":");
+        return new DependencyPathNode(p[0], p[1], version, direct);
+    }
+
+    @Test
+    void transitiveFinding_rendersViaLineWithShortestPath() {
+        Finding f = withPaths(finding("com.foo:bar", null, "2.0.0", 60, Severity.ORANGE),
+                List.of(List.of(hop("com.example:dep-b", "1.4.0", true),
+                        hop("com.foo:bar", "2.0.0", false))));
+
+        String out = render(List.of(f));
+        assertThat(out).contains(
+                "via  com.example:dep-b:1.4.0 (direct) -> com.foo:bar:2.0.0");
+        assertThat(out).doesNotContain("other path");
+    }
+
+    @Test
+    void multiplePaths_viaLineShowsShortestPlusCount_othersNotPrinted() {
+        Finding f = withPaths(finding("com.foo:bar", null, "2.0.0", 60, Severity.ORANGE),
+                List.of(
+                        List.of(hop("com.example:dep-b", "1.4.0", true), hop("com.foo:bar", "2.0.0", false)),
+                        List.of(hop("com.example:dep-c", "3.0.0", true), hop("com.foo:bar", "2.0.0", false)),
+                        List.of(hop("com.example:dep-c", "3.0.0", true), hop("com.mid:x", "1.0.0", false),
+                                hop("com.foo:bar", "2.0.0", false))));
+
+        String out = render(List.of(f));
+        assertThat(out).contains(
+                "via  com.example:dep-b:1.4.0 (direct) -> com.foo:bar:2.0.0   (+2 other paths)");
+        // Only the shortest path is printed; the alternates never appear.
+        assertThat(out).doesNotContain("dep-c");
+    }
+
+    @Test
+    void singleExtraPath_usesSingularCount() {
+        Finding f = withPaths(finding("com.foo:bar", null, "2.0.0", 60, Severity.ORANGE),
+                List.of(
+                        List.of(hop("com.a:a", "1.0.0", true), hop("com.foo:bar", "2.0.0", false)),
+                        List.of(hop("com.b:b", "1.0.0", true), hop("com.foo:bar", "2.0.0", false))));
+
+        assertThat(render(List.of(f))).contains("(+1 other path)");
+    }
+
+    @Test
+    void declaredDirectFinding_noViaLine() {
+        // The user already sees this dep in their build file — `via <self> (direct)` is noise.
+        Finding f = withPaths(finding("com.example:dep-b", null, "1.4.0", 60, Severity.ORANGE),
+                List.of(List.of(hop("com.example:dep-b", "1.4.0", true))));
+
+        assertThat(render(List.of(f))).doesNotContain("via");
+    }
+
+    @Test
+    void noPathData_noViaLine() {
+        Finding f = finding("com.foo:bar", null, "2.0.0", 60, Severity.ORANGE);
+        assertThat(render(List.of(f))).doesNotContain("via");
+    }
+
     @Test
     void dividerIsFullWidth() {
         String out = render(List.of());

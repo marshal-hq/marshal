@@ -16,6 +16,7 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.io.TempDir;
 
 import dev.marshalhq.core.Coordinates;
+import dev.marshalhq.core.DependencyPathNode;
 
 /**
  * Fast unit tests for {@link GradleDependencyResolver} that do not spawn a real
@@ -55,9 +56,9 @@ class GradleDependencyResolverTest {
     @Test
     @DisabledOnOs(WINDOWS)
     void genuineEmptyGraphReturnsEmptyList(@TempDir Path dir) throws Exception {
-        // exits 0 and writes a valid empty array — a real zero-dependency project.
+        // exits 0 and writes a valid empty graph — a real zero-dependency project.
         // This is the legitimate empty case and must NOT throw (contrast with the no-output case above).
-        writeWrapper(dir, marshalOutWriter("[]"));
+        writeWrapper(dir, marshalOutWriter("{\"modules\":[],\"edges\":[]}"));
 
         List<Coordinates> deps =
                 new GradleDependencyResolver().resolve(dir.resolve("build.gradle.kts"));
@@ -96,24 +97,37 @@ class GradleDependencyResolverTest {
     void parsesAndDedupesWrapperJsonOutput(@TempDir Path dir) throws Exception {
         // Fake wrapper that echoes a known graph (with a duplicate GAV across configs)
         // into the -PmarshalOut path, proving the parse + dedupe path independently of Gradle.
-        String json = "["
+        String json = "{\"modules\":["
                 + "{\"group\":\"com.google.guava\",\"name\":\"guava\",\"version\":\"33.0.0-jre\","
                 + "\"configuration\":\"compileClasspath\",\"project\":\":\",\"direct\":true},"
                 + "{\"group\":\"com.google.guava\",\"name\":\"guava\",\"version\":\"33.0.0-jre\","
                 + "\"configuration\":\"runtimeClasspath\",\"project\":\":\",\"direct\":true},"
                 + "{\"group\":\"org.slf4j\",\"name\":\"slf4j-api\",\"version\":\"2.0.12\","
                 + "\"configuration\":\"runtimeClasspath\",\"project\":\":\",\"direct\":false}"
-                + "]";
+                + "],\"edges\":["
+                + "{\"fromGroup\":\"com.google.guava\",\"fromName\":\"guava\","
+                + "\"toGroup\":\"org.slf4j\",\"toName\":\"slf4j-api\"}"
+                + "]}";
         // The wrapper extracts the marshalOut path from its args and writes the fixture there.
         writeWrapper(dir, "#!/bin/sh\n"
                 + "for a in \"$@\"; do case \"$a\" in -PmarshalOut=*) out=\"${a#-PmarshalOut=}\";; esac; done\n"
                 + "cat > \"$out\" <<'JSON'\n" + json + "\nJSON\n");
 
-        List<Coordinates> deps = new GradleDependencyResolver().resolve(dir.resolve("build.gradle.kts"));
+        GradleDependencyResolver resolver = new GradleDependencyResolver();
+        List<Coordinates> deps = resolver.resolve(dir.resolve("build.gradle.kts"));
 
         assertThat(deps).containsExactlyInAnyOrder(
                 new Coordinates("com.google.guava", "guava", "33.0.0-jre"),
                 new Coordinates("org.slf4j", "slf4j-api", "2.0.12"));
+
+        // Introduced-by paths reconstructed from the emitted edges: the direct is its own
+        // one-element path; the transitive's path runs direct → transitive.
+        var paths = resolver.dependencyPaths();
+        assertThat(paths.get("com.google.guava:guava")).containsExactly(
+                List.of(new DependencyPathNode("com.google.guava", "guava", "33.0.0-jre", true)));
+        assertThat(paths.get("org.slf4j:slf4j-api")).containsExactly(
+                List.of(new DependencyPathNode("com.google.guava", "guava", "33.0.0-jre", true),
+                        new DependencyPathNode("org.slf4j", "slf4j-api", "2.0.12", false)));
     }
 
     @Test
@@ -125,7 +139,7 @@ class GradleDependencyResolverTest {
         Path projectDir = Files.createDirectory(dir.resolve("project"));
         Path toolDir = Files.createDirectory(dir.resolve("tool"));
         Files.writeString(projectDir.resolve("build.gradle.kts"), "");
-        String json = "[{\"group\":\"org.slf4j\",\"name\":\"slf4j-api\",\"version\":\"2.0.12\"}]";
+        String json = "{\"modules\":[{\"group\":\"org.slf4j\",\"name\":\"slf4j-api\",\"version\":\"2.0.12\"}],\"edges\":[]}";
         Path fakeGradle = toolDir.resolve("gradle");
         writeExecutable(fakeGradle, "#!/bin/sh\n"
                 + "for a in \"$@\"; do case \"$a\" in -PmarshalOut=*) out=\"${a#-PmarshalOut=}\";; esac; done\n"

@@ -1,0 +1,14 @@
+// Gradle twin of pom.xml in this fixture — the SAME two declared directs, so both
+// resolvers must produce the same flattened graph AND the same introduced-by paths.
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.12.7'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.12.7'
+}

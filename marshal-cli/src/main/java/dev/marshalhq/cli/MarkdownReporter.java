@@ -3,8 +3,10 @@ package dev.marshalhq.cli;
 import java.io.PrintWriter;
 import java.util.List;
 
+import dev.marshalhq.core.DependencyPathNode;
 import dev.marshalhq.core.Finding;
 import dev.marshalhq.core.RuleResult;
+import dev.marshalhq.core.Severity;
 
 /**
  * Markdown renderer — pure function: List<Finding> → GitHub Flavored Markdown.
@@ -138,6 +140,15 @@ public class MarkdownReporter implements Reporter {
                     .append(" | ").append(escape(s.evidence()))
                     .append(" |\n");
         }
+        // Introduced-by path: RED/ORANGE only (YELLOW/GREEN stay path-less in markdown),
+        // shortest path only, and never for a declared direct (the reviewer already sees
+        // it in the build file diff).
+        if (f.riskLevel() == Severity.RED || f.riskLevel() == Severity.ORANGE) {
+            String path = pathCell(f);
+            if (path != null) {
+                sb.append("| Path | ").append(path).append(" |\n");
+            }
+        }
         sb.append("\n");
 
         // Recommendation
@@ -150,6 +161,34 @@ public class MarkdownReporter implements Reporter {
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────
+
+    /** Shortest introduced-by path as a table cell, or null when there is nothing to show. */
+    private static String pathCell(Finding f) {
+        List<List<DependencyPathNode>> paths = f.introducedBy();
+        if (paths.isEmpty()) {
+            return null;
+        }
+        List<DependencyPathNode> shortest = paths.get(0);
+        if (shortest.size() == 1 && shortest.get(0).direct()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < shortest.size(); i++) {
+            DependencyPathNode hop = shortest.get(i);
+            if (i > 0) {
+                sb.append(" -> ");
+            }
+            sb.append('`').append(hop.toGav()).append('`');
+            if (hop.direct()) {
+                sb.append(" (direct)");
+            }
+        }
+        int others = paths.size() - 1;
+        if (others > 0) {
+            sb.append(" (+").append(others).append(others == 1 ? " other path)" : " other paths)");
+        }
+        return sb.toString();
+    }
 
     private static String versionSpan(Finding f) {
         return f.fromVersion() != null

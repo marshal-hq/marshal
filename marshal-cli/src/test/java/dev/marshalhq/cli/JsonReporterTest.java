@@ -273,6 +273,59 @@ class JsonReporterTest {
         assertThat(meta.get("added_by").isNull()).isTrue();
     }
 
+    // ── introduced_by paths ─────────────────────────────────────────────────────────
+
+    @Test
+    void introducedBy_emittedWithFullPathShape() throws Exception {
+        List<DependencyPathNode> path = List.of(
+                new DependencyPathNode("com.example", "dep-b", "1.4.0", true),
+                new DependencyPathNode("com.foo", "bar", "2.0.0", false));
+        Finding f = finding("com.foo:bar", null, "2.0.0", 60, Severity.ORANGE, List.of())
+                .withIntroducedBy(List.of(path));
+
+        JsonNode paths = render(List.of(f)).get("findings").get(0).get("introduced_by");
+        assertThat(paths.isArray()).isTrue();
+        assertThat(paths.size()).isEqualTo(1);
+        JsonNode first = paths.get(0).get(0);
+        assertThat(first.get("group").asText()).isEqualTo("com.example");
+        assertThat(first.get("artifact").asText()).isEqualTo("dep-b");
+        assertThat(first.get("version").asText()).isEqualTo("1.4.0");
+        assertThat(first.get("direct").asBoolean()).isTrue();
+        JsonNode last = paths.get(0).get(1);
+        assertThat(last.get("group").asText()).isEqualTo("com.foo");
+        assertThat(last.get("direct").asBoolean()).isFalse();
+    }
+
+    @Test
+    void introducedBy_allPathsEmitted_notJustShortest() throws Exception {
+        DependencyPathNode target = new DependencyPathNode("com.t", "t", "1.0", false);
+        Finding f = finding("com.t:t", null, "1.0", 60, Severity.ORANGE, List.of())
+                .withIntroducedBy(List.of(
+                        List.of(new DependencyPathNode("com.a", "a", "1.0", true), target),
+                        List.of(new DependencyPathNode("com.b", "b", "1.0", true), target)));
+
+        JsonNode paths = render(List.of(f)).get("findings").get(0).get("introduced_by");
+        assertThat(paths.size()).isEqualTo(2);
+    }
+
+    @Test
+    void introducedBy_declaredDirect_singleSelfPathWithDirectTrue() throws Exception {
+        Finding f = finding("com.a:a", null, "1.0", 60, Severity.ORANGE, List.of())
+                .withIntroducedBy(List.of(
+                        List.of(new DependencyPathNode("com.a", "a", "1.0", true))));
+
+        JsonNode paths = render(List.of(f)).get("findings").get(0).get("introduced_by");
+        assertThat(paths.size()).isEqualTo(1);
+        assertThat(paths.get(0).size()).isEqualTo(1);
+        assertThat(paths.get(0).get(0).get("direct").asBoolean()).isTrue();
+    }
+
+    @Test
+    void noPaths_fieldAbsent_keepsExistingOutputByteIdentical() throws Exception {
+        JsonNode finding = render(List.of(green("com.example:ok"))).get("findings").get(0);
+        assertThat(finding.has("introduced_by")).isFalse();
+    }
+
     @Test
     void outputIsValidJson() throws Exception {
         RuleResult sig = new RuleResult(40, Severity.RED, "dropped", "SIG-DROPPED");

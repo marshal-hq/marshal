@@ -1,5 +1,6 @@
 package dev.marshalhq.cli;
 
+import dev.marshalhq.core.DependencyPathNode;
 import dev.marshalhq.core.Finding;
 import dev.marshalhq.core.RuleResult;
 import dev.marshalhq.core.Severity;
@@ -87,6 +88,10 @@ public class TerminalReporter implements Reporter {
                 if (signal.evidence() != null && !signal.evidence().isBlank()) {
                     out.println(Ansi.AUTO.string(evidenceLine(signal)));
                 }
+            }
+            String via = viaLine(f);
+            if (via != null) {
+                out.println(Ansi.AUTO.string(via));
             }
         }
 
@@ -182,6 +187,39 @@ public class TerminalReporter implements Reporter {
         int pad = Math.max(2, width - leftLen - score.length());
 
         return badge + " " + content + " ".repeat(pad) + score;
+    }
+
+    /**
+     * The introduced-by line: shortest path from a declared direct to this node, muted
+     * (never risk-colored — it is context, not a signal). Null when there is nothing to
+     * show: no path data, or the finding IS a declared direct (the user already sees it
+     * in their build file, so {@code via <self> (direct)} would be noise).
+     */
+    private static String viaLine(Finding f) {
+        List<List<DependencyPathNode>> paths = f.introducedBy();
+        if (paths.isEmpty()) {
+            return null;
+        }
+        List<DependencyPathNode> shortest = paths.get(0);
+        if (shortest.size() == 1 && shortest.get(0).direct()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder("    via  ");
+        for (int i = 0; i < shortest.size(); i++) {
+            DependencyPathNode hop = shortest.get(i);
+            if (i > 0) {
+                sb.append(" -> ");
+            }
+            sb.append(hop.toGav());
+            if (hop.direct()) {
+                sb.append(" (direct)");
+            }
+        }
+        int others = paths.size() - 1;
+        if (others > 0) {
+            sb.append("   (+").append(others).append(others == 1 ? " other path)" : " other paths)");
+        }
+        return "@|fg(245) " + sb + "|@";
     }
 
     private static String evidenceLine(RuleResult signal) {

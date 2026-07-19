@@ -8,8 +8,10 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -48,11 +50,13 @@ import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResolutionException;
 import org.eclipse.aether.resolution.ArtifactResult;
 import org.eclipse.aether.supplier.RepositorySystemSupplier;
+import org.eclipse.aether.util.graph.transformer.ConflictResolver;
 import org.eclipse.aether.util.repository.SimpleArtifactDescriptorPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dev.marshalhq.core.Coordinates;
+import dev.marshalhq.core.DependencyPathNode;
 
 /**
  * Resolves a Maven project's dependencies from its POM.
@@ -87,6 +91,7 @@ public class PomDependencyResolver implements DependencyResolver {
     private final List<RemoteRepository> repos;
     private final Set<DependencyScope> includedScopes;
     private volatile List<Coordinates> unexpandedSubtrees = List.of();
+    private volatile Map<String, List<List<DependencyPathNode>>> pathsByGa = Map.of();
 
     public PomDependencyResolver() {
         this(DEFAULT_SCOPES);
@@ -126,9 +131,11 @@ public class PomDependencyResolver implements DependencyResolver {
         }
 
         // Expand transitively. Directs are already present, so first-seen-wins putIfAbsent
-        // only ever adds new group:artifact entries.
+        // only ever adds new group:artifact entries. Parent→child GA edges are recorded on
+        // the side to build introduced-by paths after the flat set is final.
         Set<Coordinates> descriptorFailures = ConcurrentHashMap.newKeySet();
-        for (Coordinates c : collectTransitive(roots, repositoriesFor(model), pomPath, descriptorFailures)) {
+        Map<String, Set<String>> edges = new LinkedHashMap<>();
+        for (Coordinates c : collectTransitive(roots, repositoriesFor(model), pomPath, descriptorFailures, edges)) {
             byGa.putIfAbsent(c.toGa(), c);
         }
 
@@ -151,12 +158,30 @@ public class PomDependencyResolver implements DependencyResolver {
         }
         this.unexpandedSubtrees = List.copyOf(unexpanded);
 
+        // Introduced-by paths: declared directs (concrete or UNRESOLVED) are the roots,
+        // versions render from the winners in byGa. Display metadata only (scorer unchanged).
+        Set<String> directGas = new HashSet<>();
+        for (org.eclipse.aether.graph.Dependency root : roots) {
+            directGas.add(root.getArtifact().getGroupId() + ":" + root.getArtifact().getArtifactId());
+        }
+        for (Coordinates c : unresolvedDirects) {
+            directGas.add(c.toGa());
+        }
+        Map<String, String> versionByGa = new LinkedHashMap<>();
+        byGa.forEach((ga, c) -> versionByGa.put(ga, c.version()));
+        this.pathsByGa = DependencyPathBuilder.build(versionByGa, directGas, edges);
+
         return List.copyOf(byGa.values());
     }
 
     @Override
     public List<Coordinates> unexpandedSubtrees() {
         return unexpandedSubtrees;
+    }
+
+    @Override
+    public Map<String, List<List<DependencyPathNode>>> dependencyPaths() {
+        return pathsByGa;
     }
 
     /**
@@ -228,7 +253,8 @@ public class PomDependencyResolver implements DependencyResolver {
      * read fine, zero deps) never lands in the set.
      */
     private List<Coordinates> collectTransitive(List<org.eclipse.aether.graph.Dependency> roots,
-            List<RemoteRepository> repositories, Path pomPath, Set<Coordinates> descriptorFailures) {
+            List<RemoteRepository> repositories, Path pomPath, Set<Coordinates> descriptorFailures,
+            Map<String, Set<String>> edges) {
         if (roots.isEmpty()) {
             return List.of();
         }
@@ -259,7 +285,7 @@ public class PomDependencyResolver implements DependencyResolver {
         });
         try {
             CollectResult result = system.collectDependencies(walkSession, request);
-            return flatten(result.getRoot());
+            return flatten(result.getRoot(), edges);
         } catch (DependencyCollectionException e) {
             // The declared directs are already seeded into the result by resolve(), so a
             // failed walk (offline, unreachable repo, connector error) degrades to whatever
@@ -274,7 +300,7 @@ public class PomDependencyResolver implements DependencyResolver {
             }
             CollectResult partial = e.getResult();
             if (partial != null && partial.getRoot() != null) {
-                return flatten(partial.getRoot());
+                return flatten(partial.getRoot(), edges);
             }
             return List.of();
         }
@@ -296,29 +322,42 @@ public class PomDependencyResolver implements DependencyResolver {
                 scope, false, exclusions);
     }
 
-    private List<Coordinates> flatten(DependencyNode root) {
+    private List<Coordinates> flatten(DependencyNode root, Map<String, Set<String>> edges) {
         Map<String, Coordinates> byGa = new LinkedHashMap<>();
         // Identity-keyed visited set: a partial graph (failed walk) has NOT been through
         // ConflictResolver, so it may contain cycles/shared subtrees — walk each node once.
         Set<DependencyNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-        collectNodes(root, byGa, visited);
+        collectNodes(root, byGa, visited, edges);
         return List.copyOf(byGa.values());
     }
 
-    private void collectNodes(DependencyNode node, Map<String, Coordinates> byGa, Set<DependencyNode> visited) {
+    private void collectNodes(DependencyNode node, Map<String, Coordinates> byGa,
+            Set<DependencyNode> visited, Map<String, Set<String>> edges) {
         if (!visited.add(node)) {
             return;
         }
+        Artifact parent = node.getArtifact();
+        String parentGa = parent != null ? parent.getGroupId() + ":" + parent.getArtifactId() : null;
         for (DependencyNode child : node.getChildren()) {
             Artifact a = child.getArtifact();
             // Transitive nodes honor the same scope filter as directs: Aether's default
             // selector only prunes test/provided, so e.g. a runtime transitive would
             // otherwise leak into a COMPILE-only-configured resolver.
             if (a != null && isIncludedScope(nodeScope(child))) {
-                Coordinates c = new Coordinates(a.getGroupId(), a.getArtifactId(), a.getBaseVersion());
-                byGa.putIfAbsent(c.toGa(), c);
+                // Verbose conflict resolution keeps evicted/duplicate nodes as childless
+                // leaves marked with NODE_DATA_WINNER. They must never land in the flat
+                // set (only winners are real), but their GA-level edge is exactly the
+                // diamond information the introduced-by paths need.
+                if (child.getData().get(ConflictResolver.NODE_DATA_WINNER) == null) {
+                    Coordinates c = new Coordinates(a.getGroupId(), a.getArtifactId(), a.getBaseVersion());
+                    byGa.putIfAbsent(c.toGa(), c);
+                }
+                if (parentGa != null) {
+                    edges.computeIfAbsent(parentGa, k -> new LinkedHashSet<>())
+                            .add(a.getGroupId() + ":" + a.getArtifactId());
+                }
             }
-            collectNodes(child, byGa, visited);
+            collectNodes(child, byGa, visited, edges);
         }
     }
 
@@ -394,6 +433,12 @@ public class PomDependencyResolver implements DependencyResolver {
         // Tolerate missing/invalid transitive POMs: one unreachable descriptor must not abort
         // the whole graph walk (the node still appears; it just isn't expanded further).
         session.setArtifactDescriptorPolicy(new SimpleArtifactDescriptorPolicy(true, true));
+        // Verbose conflict resolution keeps evicted/duplicate nodes as childless leaves
+        // (marked NODE_DATA_WINNER) instead of pruning them. Without it a deduped node is
+        // reachable through only ONE parent in the graph and every other introduced-by
+        // path (the diamond) is lost. flatten() skips the marked leaves, so the flat set
+        // is identical to non-verbose mode.
+        session.setConfigProperty(ConflictResolver.CONFIG_PROP_VERBOSE, true);
         return session;
     }
 

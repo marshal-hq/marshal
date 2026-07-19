@@ -199,29 +199,38 @@ public class DiffCommand implements Callable<Integer> {
         Set<String> unexpandedGas = headRoute.resolver().unexpandedSubtrees().stream()
                 .map(Coordinates::toGa)
                 .collect(Collectors.toSet());
+        // Introduced-by paths come from the head resolution: a transitive that is new on
+        // head must show which (bumped) direct dragged it in — same attachment as scan.
+        Map<String, List<List<DependencyPathNode>>> headPaths = headRoute.resolver().dependencyPaths();
         List<Finding> findings = new ArrayList<>();
 
         for (Coordinates head : added) {
             if (CliHelper.isUnresolved(head)) {
-                findings.add(Finding.unresolved(head));
+                findings.add(CliHelper.attachPaths(Finding.unresolved(head), headPaths));
                 continue;
             }
             VersionMetadata current = metaByGav.getOrDefault(head.toGav(), CliHelper.stub(head));
             Finding finding = CliHelper.toFinding(head, null, current, null, engine, highReps);
-            findings.add(unexpandedGas.contains(head.toGa()) ? finding.withUnexpandedSubtree() : finding);
+            if (unexpandedGas.contains(head.toGa())) {
+                finding = finding.withUnexpandedSubtree();
+            }
+            findings.add(CliHelper.attachPaths(finding, headPaths));
         }
 
         for (DiffPair pair : changed) {
             Coordinates head = pair.head();
             if (CliHelper.isUnresolved(head)) {
-                findings.add(Finding.unresolved(head));
+                findings.add(CliHelper.attachPaths(Finding.unresolved(head), headPaths));
                 continue;
             }
             VersionMetadata current = metaByGav.getOrDefault(head.toGav(), CliHelper.stub(head));
             VersionMetadata previous = CliHelper.isUnresolved(pair.base()) ? null
                     : metaByGav.get(pair.base().toGav());
             Finding finding = CliHelper.toFinding(head, pair.base().version(), current, previous, engine, highReps);
-            findings.add(unexpandedGas.contains(head.toGa()) ? finding.withUnexpandedSubtree() : finding);
+            if (unexpandedGas.contains(head.toGa())) {
+                finding = finding.withUnexpandedSubtree();
+            }
+            findings.add(CliHelper.attachPaths(finding, headPaths));
         }
 
         // Whitelist suppression. A matched GAV stays in the audit record but drops out of

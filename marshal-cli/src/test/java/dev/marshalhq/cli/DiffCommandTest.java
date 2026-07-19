@@ -222,6 +222,42 @@ class DiffCommandTest {
         assertThat(exit).isEqualTo(3);
     }
 
+    // ── introduced-by path on new head-side transitives ───────────────────────────
+
+    @Test
+    void newTransitiveOnHead_carriesHeadSidePathInMarkdown() throws Exception {
+        // Head resolution pulls a new transitive; the resolver reports its head-side
+        // introduced-by path, and the diff's PR comment shows which direct dragged it in.
+        Coordinates transitive = new Coordinates("com.foo", "bar", "2.0.0");
+        when(mockClient.fetchMetadata(transitive)).thenReturn(absent(transitive));
+        when(mockResolver.resolve(tempDir.resolve("base.xml"))).thenReturn(List.of(LIB_V1));
+        when(mockResolver.resolve(tempDir.resolve("head.xml"))).thenReturn(List.of(LIB_V1, transitive));
+        when(mockResolver.dependencyPaths()).thenReturn(java.util.Map.of(
+                "com.foo:bar", List.of(List.of(
+                        new DependencyPathNode("com.example", "lib", "1.0.0", true),
+                        new DependencyPathNode("com.foo", "bar", "2.0.0", false)))));
+
+        var origOut = System.out;
+        var outBytes = new java.io.ByteArrayOutputStream();
+        System.setOut(new java.io.PrintStream(outBytes));
+        try {
+            DiffCommand cmd = new DiffCommand(mockClient, mockResolver);
+            int exit = new CommandLine(cmd).execute(
+                    "--base", tempDir.resolve("base.xml").toString(),
+                    "--head", tempDir.resolve("head.xml").toString(),
+                    "--output", "JSON");
+            assertThat(exit).isEqualTo(0);
+        } finally {
+            System.setOut(origOut);
+        }
+
+        // JSON carries the head-side path on the added finding.
+        String out = outBytes.toString();
+        assertThat(out).contains("\"introduced_by\"");
+        assertThat(out).contains("\"artifact\" : \"lib\"");
+        assertThat(out).contains("\"direct\" : true");
+    }
+
     @Test
     void baseUnresolvable_exits3_neverNoiseWall() {
         // base cannot be resolved — must NOT fall through to head-minus-empty (which

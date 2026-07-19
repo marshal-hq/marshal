@@ -218,6 +218,16 @@ class CliHelper {
         }
     }
 
+    /**
+     * Attaches the introduced-by paths for the finding's {@code group:artifact}, if the
+     * resolver recorded any. Display metadata only — attached after scoring, and absent
+     * entries leave the finding (and every serialized output) unchanged.
+     */
+    static Finding attachPaths(Finding finding, Map<String, List<List<DependencyPathNode>>> pathsByGa) {
+        List<List<DependencyPathNode>> paths = pathsByGa.get(finding.coordinates().toGa());
+        return paths == null || paths.isEmpty() ? finding : finding.withIntroducedBy(paths);
+    }
+
     static VersionMetadata stub(Coordinates coords) {
         return new VersionMetadata(coords, null, null, SignatureStatus.UNKNOWN,
                 List.of(), -1, null, Instant.EPOCH, false);
