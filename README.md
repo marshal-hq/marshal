@@ -43,18 +43,19 @@ jobs:
       # - uses: actions/setup-java@v4
       #   with: { distribution: temurin, java-version: '17' }
       - name: Marshal scan
-        uses: marshal-hq/marshal/marshal-action@v0.1.0
+        uses: marshal-hq/marshal/marshal-action@v0.3.0
         with:
           path: '.'        # a build file or project dir (Maven or Gradle)
           threshold: red
           fail-on: fail
+          marshal-version: '0.3.0'
 ```
 
 Or run the CLI directly:
 
 ```bash
 # Download
-curl -fsSL https://github.com/marshal-hq/marshal/releases/download/v0.1.0/marshal-cli-0.1.0.jar \
+curl -fsSL https://github.com/marshal-hq/marshal/releases/download/v0.3.0/marshal-cli-0.3.0.jar \
   -o marshal.jar
 
 # Scan a Maven project
@@ -191,10 +192,6 @@ thresholds:
   fail-on: red      # red | orange | yellow
   warn-on: orange
 
-allowlist:
-  packages: []
-    # - "org.springframework:*"
-
 notifications:
   slack:
     webhook: ${MARSHAL_SLACK_WEBHOOK}
@@ -202,20 +199,29 @@ notifications:
 ```
 
 Full reference: [examples/marshal.yml](examples/marshal.yml). Rules can be
-disabled individually. Allowlisted packages are skipped entirely. Slack alerts
-fire when findings reach or exceed `min-level`.
+disabled individually. Slack alerts fire when findings reach or exceed
+`min-level`.
+
+To suppress a specific finding, add the package to `marshal-whitelist.yml` at
+your repo root. Entries are pinned to a full `groupId:artifactId:version` and
+need a reason; wildcards are rejected. Suppressed findings are not dropped from
+the output: the JSON report keeps them, marked with which list matched, the
+reason, and the expiry date.
 
 ## Status
 
-Marshal is in early development (v0.1.0). The detection engine covers Maven
+Marshal is in early development (v0.3.0). The detection engine covers Maven
 Central with 7 behavioral rules. Maven and Gradle are both supported now, with
 npm and PyPI after that.
 
 What works:
 - CLI scanning of Maven (pom.xml) and Gradle (build.gradle, build.gradle.kts) projects
 - Full transitive dependency resolution on both build tools
+- Dependency paths on findings: each flagged transitive shows which of your
+  declared dependencies introduced it
 - GitHub Action with PR comments and build tool auto-detection
 - Risk scoring with configurable thresholds
+- Finding suppression via a pinned, audited whitelist
 - Slack alerts on critical findings
 
 What's next:

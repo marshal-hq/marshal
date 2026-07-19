@@ -30,7 +30,7 @@ inputs:
     required: false
   marshal-version:
     description: 'Marshal release to run (a release tag on the marshal-repo, without the leading v).'
-    default: '0.1.0'
+    default: '0.3.0'
   marshal-repo:
     description: 'Repository that hosts the Marshal release assets.'
     default: 'marshal-hq/marshal'
