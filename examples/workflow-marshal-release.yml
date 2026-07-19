@@ -4,9 +4,9 @@ name: Marshal
 on:
   pull_request:
     paths:
-      - 'pom.xml'
-      - 'build.gradle'
-      - 'build.gradle.kts'
+      - '**/pom.xml'
+      - '**/build.gradle'
+      - '**/build.gradle.kts'
 
 jobs:
   marshal:
@@ -16,12 +16,17 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # required: the PR base is built and diffed
+
+      # Gradle projects only: provide the build toolchain for ./gradlew:
+      # - uses: actions/setup-java@v4
+      #   with: { distribution: temurin, java-version: '17' }
 
       - name: Marshal scan
-        uses: marshal-hq/marshal/marshal-action@v0.1.0
+        uses: marshal-hq/marshal/marshal-action@v0.3.0
         with:
-          pom-path: pom.xml
+          path: '.'        # a build file or project dir (Maven or Gradle)
           threshold: red
           fail-on: fail
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          marshal-version: '0.3.0'

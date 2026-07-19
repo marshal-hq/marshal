@@ -211,8 +211,7 @@ reason, and the expiry date.
 ## Status
 
 Marshal is in early development (v0.3.0). The detection engine covers Maven
-Central with 7 behavioral rules. Maven and Gradle are both supported now, with
-npm and PyPI after that.
+Central with 7 behavioral rules. Maven and Gradle are both supported.
 
 What works:
 - CLI scanning of Maven (pom.xml) and Gradle (build.gradle, build.gradle.kts) projects
@@ -223,11 +222,6 @@ What works:
 - Risk scoring with configurable thresholds
 - Finding suppression via a pinned, audited whitelist
 - Slack alerts on critical findings
-
-What's next:
-- npm ecosystem support
-- PyPI ecosystem support
-- Hosted continuous watching (SaaS)
 
 ## License
 

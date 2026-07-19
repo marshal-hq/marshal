@@ -11,7 +11,7 @@ VERSION="${1:?Usage: release.sh <version>  e.g. 0.1.0}"
 JAR_NAME="marshal-cli-${VERSION}.jar"
 
 echo "=== Building shadow JAR ==="
-./gradlew :marshal-cli:shadowJar --no-daemon
+./gradlew :marshal-cli:shadowJar --no-daemon -Pversion="${VERSION}"
 
 echo "=== Staging artifact in dist/ ==="
 mkdir -p dist
