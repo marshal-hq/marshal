@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dev.marshalhq.core.Coordinates;
+import dev.marshalhq.core.DependencyPathNode;
 import dev.marshalhq.core.Finding;
 import dev.marshalhq.core.RuleEngine;
 import dev.marshalhq.core.Severity;
@@ -143,8 +144,13 @@ import picocli.CommandLine.Option;
         Map<String, VersionMetadata> metaByGav = prepareGavMetaData(resolved, histories, previousCoords, semaphore, client, executor);
         executor.shutdown();
 
-        // Step 4: assemble findings
-        List<Finding> findings = assembleCoordsFindings(resolved, metaByGav, previousCoords, engine, highReps, unresolved);
+        // Step 4: assemble findings. A dep whose descriptor could not be read is scored
+        // normally but flagged: its subtree was never walked and must not look clean (S06).
+        Set<String> unexpandedGas = resolver.unexpandedSubtrees().stream()
+                .map(Coordinates::toGa)
+                .collect(Collectors.toSet());
+        List<Finding> findings = assembleCoordsFindings(resolved, metaByGav, previousCoords, engine, highReps,
+                unresolved, unexpandedGas, resolver.dependencyPaths());
 
         // Step 4b: whitelist suppression.
         // A matched GAV stays in the audit record but drops out of the risk list, the exit code, and Slack.
@@ -184,7 +190,9 @@ import picocli.CommandLine.Option;
             Map<String, Coordinates> previousCoords,
             RuleEngine engine,
             Set<String> highReps,
-            List<Coordinates> unresolved) {
+            List<Coordinates> unresolved,
+            Set<String> unexpandedGas,
+            Map<String, List<List<DependencyPathNode>>> pathsByGa) {
 
         List<Finding> findings = new ArrayList<>();
         for (Coordinates coords : resolved) {
@@ -192,10 +200,14 @@ import picocli.CommandLine.Option;
             Coordinates prevCoords = previousCoords.get(coords.toGav());
             VersionMetadata previous = prevCoords != null ? metaByGav.get(prevCoords.toGav()) : null;
             String fromVersion = prevCoords != null ? prevCoords.version() : null;
-            findings.add(CliHelper.toFinding(coords, fromVersion, current, previous, engine, highReps));
+            Finding finding = CliHelper.toFinding(coords, fromVersion, current, previous, engine, highReps);
+            if (unexpandedGas.contains(coords.toGa())) {
+                finding = finding.withUnexpandedSubtree();
+            }
+            findings.add(CliHelper.attachPaths(finding, pathsByGa));
         }
         for (Coordinates coords : unresolved) {
-            findings.add(Finding.unresolved(coords));
+            findings.add(CliHelper.attachPaths(Finding.unresolved(coords), pathsByGa));
         }
         return findings;
     }

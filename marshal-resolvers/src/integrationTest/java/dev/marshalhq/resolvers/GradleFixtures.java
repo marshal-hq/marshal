@@ -65,7 +65,7 @@ final class GradleFixtures {
         Set<String> out = new LinkedHashSet<>();
         try {
             JsonNode root = MAPPER.readTree(json.toFile());
-            for (JsonNode n : root) {
+            for (JsonNode n : root.path("modules")) {
                 out.add(n.get("group").asText() + ":" + n.get("name").asText()
                         + ":" + n.get("version").asText());
             }

@@ -192,6 +192,25 @@ class JsonReporterTest {
     }
 
     @Test
+    void unexpandedSubtree_markedInFinding() throws Exception {
+        Finding f = finding("com.example:broken", null, "1.0.0", 0, Severity.GREEN, List.of())
+                .withUnexpandedSubtree();
+        JsonNode finding = render(List.of(f)).get("findings").get(0);
+
+        assertThat(finding.get("subtree_unexpanded").asBoolean()).isTrue();
+        // Still scored as a normal dep, not unresolved
+        assertThat(finding.get("risk_level").asText()).isEqualTo("green");
+    }
+
+    @Test
+    void noUnexpandedSubtree_fieldAbsent_keepsSchemaByteCompatible() throws Exception {
+        Finding f = green("com.example:ok");
+        JsonNode finding = render(List.of(f)).get("findings").get(0);
+
+        assertThat(finding.has("subtree_unexpanded")).isFalse();
+    }
+
+    @Test
     void firstSeenDep_fromVersionIsNull() throws Exception {
         Finding f = finding("com.example:new-lib", null, "1.0.0", 87, Severity.RED, List.of());
         JsonNode finding = render(List.of(f)).get("findings").get(0);
@@ -252,6 +271,59 @@ class JsonReporterTest {
         // null expiry / added_by are emitted as JSON null, never as the string "null".
         assertThat(meta.get("expires").isNull()).isTrue();
         assertThat(meta.get("added_by").isNull()).isTrue();
+    }
+
+    // ── introduced_by paths ─────────────────────────────────────────────────────────
+
+    @Test
+    void introducedBy_emittedWithFullPathShape() throws Exception {
+        List<DependencyPathNode> path = List.of(
+                new DependencyPathNode("com.example", "dep-b", "1.4.0", true),
+                new DependencyPathNode("com.foo", "bar", "2.0.0", false));
+        Finding f = finding("com.foo:bar", null, "2.0.0", 60, Severity.ORANGE, List.of())
+                .withIntroducedBy(List.of(path));
+
+        JsonNode paths = render(List.of(f)).get("findings").get(0).get("introduced_by");
+        assertThat(paths.isArray()).isTrue();
+        assertThat(paths.size()).isEqualTo(1);
+        JsonNode first = paths.get(0).get(0);
+        assertThat(first.get("group").asText()).isEqualTo("com.example");
+        assertThat(first.get("artifact").asText()).isEqualTo("dep-b");
+        assertThat(first.get("version").asText()).isEqualTo("1.4.0");
+        assertThat(first.get("direct").asBoolean()).isTrue();
+        JsonNode last = paths.get(0).get(1);
+        assertThat(last.get("group").asText()).isEqualTo("com.foo");
+        assertThat(last.get("direct").asBoolean()).isFalse();
+    }
+
+    @Test
+    void introducedBy_allPathsEmitted_notJustShortest() throws Exception {
+        DependencyPathNode target = new DependencyPathNode("com.t", "t", "1.0", false);
+        Finding f = finding("com.t:t", null, "1.0", 60, Severity.ORANGE, List.of())
+                .withIntroducedBy(List.of(
+                        List.of(new DependencyPathNode("com.a", "a", "1.0", true), target),
+                        List.of(new DependencyPathNode("com.b", "b", "1.0", true), target)));
+
+        JsonNode paths = render(List.of(f)).get("findings").get(0).get("introduced_by");
+        assertThat(paths.size()).isEqualTo(2);
+    }
+
+    @Test
+    void introducedBy_declaredDirect_singleSelfPathWithDirectTrue() throws Exception {
+        Finding f = finding("com.a:a", null, "1.0", 60, Severity.ORANGE, List.of())
+                .withIntroducedBy(List.of(
+                        List.of(new DependencyPathNode("com.a", "a", "1.0", true))));
+
+        JsonNode paths = render(List.of(f)).get("findings").get(0).get("introduced_by");
+        assertThat(paths.size()).isEqualTo(1);
+        assertThat(paths.get(0).size()).isEqualTo(1);
+        assertThat(paths.get(0).get(0).get("direct").asBoolean()).isTrue();
+    }
+
+    @Test
+    void noPaths_fieldAbsent_keepsExistingOutputByteIdentical() throws Exception {
+        JsonNode finding = render(List.of(green("com.example:ok"))).get("findings").get(0);
+        assertThat(finding.has("introduced_by")).isFalse();
     }
 
     @Test

@@ -131,6 +131,31 @@ class ScanCommandTest {
         assertThat(exit).isEqualTo(0);
     }
 
+    @Test
+    void unexpandedSubtree_surfacedInJson_depStillScored_exitUnchanged() throws Exception {
+        when(mockResolver.resolve(any())).thenReturn(List.of(LIB_A));
+        when(mockResolver.unexpandedSubtrees()).thenReturn(List.of(LIB_A));
+        when(mockClient.getVersionHistory("com.example", "lib-a"))
+                .thenReturn(List.of("2.0.0"));
+        when(mockClient.fetchMetadata(LIB_A)).thenReturn(signedMeta(LIB_A));
+
+        PrintStream origOut = System.out;
+        ByteArrayOutputStream outBytes = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(outBytes));
+        try {
+            ScanCommand cmd = new ScanCommand(mockClient, mockResolver);
+            int exit = run(cmd, "--source", tempDir.resolve("pom.xml").toString(), "--output", "json");
+
+            // An unexpanded subtree is a sentinel, never exit 3 (and not a finding at threshold)
+            assertThat(exit).isEqualTo(0);
+        } finally {
+            System.setOut(origOut);
+        }
+        String json = outBytes.toString();
+        assertThat(json).contains("\"subtree_unexpanded\" : true");
+        assertThat(json).contains("\"risk_level\" : \"green\"");
+    }
+
     // -------------------------------------------------------------------------
     // Exit code logic
     // -------------------------------------------------------------------------

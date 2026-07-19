@@ -117,6 +117,56 @@ class PomDependencyResolverIntegrationTest {
     }
 
     @Test
+    void missingDescriptor_nodeKeptAndReportedAsUnexpandedSubtree() {
+        // com.company.internal:internal-library does not exist on Central: its descriptor
+        // read fails, the lenient policy keeps the walk alive, and the node must surface
+        // via unexpandedSubtrees() — its subtree was never walked (S06: never silent).
+        Path pom = fixture("unknown-groupid-pom.xml");
+        List<Coordinates> deps = resolver.resolve(pom);
+
+        assertThat(deps).anyMatch(c ->
+            c.groupId().equals("com.company.internal") &&
+            c.artifactId().equals("internal-library") &&
+            c.version().equals("1.0.0"));
+
+        assertThat(resolver.unexpandedSubtrees())
+                .contains(new Coordinates("com.company.internal", "internal-library", "1.0.0"));
+    }
+
+    @Test
+    void healthyGraph_reportsNoUnexpandedSubtrees() {
+        // A leaf with zero dependencies must NOT be confused with a skipped subtree.
+        Path pom = fixture("simple-pom.xml");
+        resolver.resolve(pom);
+
+        assertThat(resolver.unexpandedSubtrees()).isEmpty();
+    }
+
+    @Test
+    void bomImport_managedVersionResolved_andSubtreeWalked() {
+        // scope=import BOM (spring-boot-dependencies 3.2.0) supplies the version for a
+        // version-less declared dep. Previously wired by inspection only (backlog item).
+        Path pom = fixture("bom-pom.xml");
+        List<Coordinates> deps = resolver.resolve(pom);
+
+        // The declared dep gets the BOM-managed version — not UNRESOLVED, not dropped.
+        assertThat(deps).anyMatch(c ->
+            c.groupId().equals("org.springframework.boot") &&
+            c.artifactId().equals("spring-boot-starter-web") &&
+            c.version().equals("3.2.0"));
+
+        // And its subtree was walked (transitives present, versions BOM-consistent).
+        assertThat(deps).anyMatch(c ->
+            c.groupId().equals("org.springframework") &&
+            c.artifactId().equals("spring-webmvc"));
+        assertThat(deps).anyMatch(c ->
+            c.groupId().equals("com.fasterxml.jackson.core") &&
+            c.artifactId().equals("jackson-databind"));
+
+        assertThat(resolver.unexpandedSubtrees()).isEmpty();
+    }
+
+    @Test
     void allResolvedCoordinatesHaveNonBlankFields() {
         Path pom = fixture("simple-pom.xml");
         List<Coordinates> deps = resolver.resolve(pom);

@@ -42,6 +42,10 @@ class TerminalReporterTest {
         return Finding.unresolved(new Coordinates(parts[0], parts[1], "UNRESOLVED"));
     }
 
+    private static Finding withUnexpandedSubtree(String ga, String to, Severity level) {
+        return finding(ga, null, to, 0, level).withUnexpandedSubtree();
+    }
+
     private String render(List<Finding> findings) {
         StringWriter sw = new StringWriter();
         reporter.report(ScanReport.from(findings), new PrintWriter(sw));
@@ -191,6 +195,36 @@ class TerminalReporterTest {
     }
 
     @Test
+    void unexpandedSubtree_surfacesNotice_depStillScored() {
+        Finding flagged = withUnexpandedSubtree("com.example:broken-descriptor", "1.0.0", Severity.GREEN);
+        String out = render(List.of(flagged));
+
+        // The dep itself is counted (scored normally) …
+        assertThat(out).contains("1 dependency");
+        // … but the unscanned subtree must be called out.
+        assertThat(out).contains("could not be expanded");
+        assertThat(out).contains("not scanned, manual review recommended");
+    }
+
+    @Test
+    void unexpandedSubtree_gavListedWhenShowUnresolvedEnabled() {
+        TerminalReporter showUnres = new TerminalReporter(WIDTH, false, true);
+        Finding flagged = withUnexpandedSubtree("com.example:broken-descriptor", "1.0.0", Severity.GREEN);
+        StringWriter sw = new StringWriter();
+        showUnres.report(ScanReport.from(List.of(flagged)), new PrintWriter(sw));
+
+        assertThat(sw.toString()).contains("· com.example:broken-descriptor:1.0.0");
+    }
+
+    @Test
+    void noUnexpandedSubtrees_noticeIsAbsent() {
+        Finding green = finding("com.example:a", null, "1.0", 0, Severity.GREEN);
+        String out = render(List.of(green));
+
+        assertThat(out).doesNotContain("could not be expanded");
+    }
+
+    @Test
     void unknownMetadata_surfacesIncompleteMetadataNotice() {
         Finding green = finding("com.example:a", null, "1.0", 0, Severity.GREEN);
         Finding unknown = findingWithUnknown("com.example:b", "2.0");
@@ -288,6 +322,70 @@ class TerminalReporterTest {
         assertThat(out).contains("Internal, vetted by platform");
         // The hint to use the flag is not shown when the flag is already on.
         assertThat(out).doesNotContain("--show-suppressed");
+    }
+
+    // ── introduced-by via line ─────────────────────────────────────────────────────
+
+    private static Finding withPaths(Finding f, List<List<DependencyPathNode>> paths) {
+        return f.withIntroducedBy(paths);
+    }
+
+    private static DependencyPathNode hop(String ga, String version, boolean direct) {
+        String[] p = ga.split(":");
+        return new DependencyPathNode(p[0], p[1], version, direct);
+    }
+
+    @Test
+    void transitiveFinding_rendersViaLineWithShortestPath() {
+        Finding f = withPaths(finding("com.foo:bar", null, "2.0.0", 60, Severity.ORANGE),
+                List.of(List.of(hop("com.example:dep-b", "1.4.0", true),
+                        hop("com.foo:bar", "2.0.0", false))));
+
+        String out = render(List.of(f));
+        assertThat(out).contains(
+                "via  com.example:dep-b:1.4.0 (direct) -> com.foo:bar:2.0.0");
+        assertThat(out).doesNotContain("other path");
+    }
+
+    @Test
+    void multiplePaths_viaLineShowsShortestPlusCount_othersNotPrinted() {
+        Finding f = withPaths(finding("com.foo:bar", null, "2.0.0", 60, Severity.ORANGE),
+                List.of(
+                        List.of(hop("com.example:dep-b", "1.4.0", true), hop("com.foo:bar", "2.0.0", false)),
+                        List.of(hop("com.example:dep-c", "3.0.0", true), hop("com.foo:bar", "2.0.0", false)),
+                        List.of(hop("com.example:dep-c", "3.0.0", true), hop("com.mid:x", "1.0.0", false),
+                                hop("com.foo:bar", "2.0.0", false))));
+
+        String out = render(List.of(f));
+        assertThat(out).contains(
+                "via  com.example:dep-b:1.4.0 (direct) -> com.foo:bar:2.0.0   (+2 other paths)");
+        // Only the shortest path is printed; the alternates never appear.
+        assertThat(out).doesNotContain("dep-c");
+    }
+
+    @Test
+    void singleExtraPath_usesSingularCount() {
+        Finding f = withPaths(finding("com.foo:bar", null, "2.0.0", 60, Severity.ORANGE),
+                List.of(
+                        List.of(hop("com.a:a", "1.0.0", true), hop("com.foo:bar", "2.0.0", false)),
+                        List.of(hop("com.b:b", "1.0.0", true), hop("com.foo:bar", "2.0.0", false))));
+
+        assertThat(render(List.of(f))).contains("(+1 other path)");
+    }
+
+    @Test
+    void declaredDirectFinding_noViaLine() {
+        // The user already sees this dep in their build file — `via <self> (direct)` is noise.
+        Finding f = withPaths(finding("com.example:dep-b", null, "1.4.0", 60, Severity.ORANGE),
+                List.of(List.of(hop("com.example:dep-b", "1.4.0", true))));
+
+        assertThat(render(List.of(f))).doesNotContain("via");
+    }
+
+    @Test
+    void noPathData_noViaLine() {
+        Finding f = finding("com.foo:bar", null, "2.0.0", 60, Severity.ORANGE);
+        assertThat(render(List.of(f))).doesNotContain("via");
     }
 
     @Test

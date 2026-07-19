@@ -213,12 +213,12 @@ npm and PyPI after that.
 
 What works:
 - CLI scanning of Maven (pom.xml) and Gradle (build.gradle, build.gradle.kts) projects
+- Full transitive dependency resolution on both build tools
 - GitHub Action with PR comments and build tool auto-detection
 - Risk scoring with configurable thresholds
 - Slack alerts on critical findings
 
 What's next:
-- Transitive dependency resolution (currently direct deps only)
 - npm ecosystem support
 - PyPI ecosystem support
 - Hosted continuous watching (SaaS)

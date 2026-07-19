@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 /**
  * marshal diff — compare two project states and report only new dependency risks.
@@ -26,6 +27,10 @@ import java.util.concurrent.*;
  * {@link ResolverRouter} exactly like {@code scan}. The two sides may even use
  * different build tools (e.g. Maven base, Gradle head) — the delta is computed at
  * the coordinate level.
+ * <p>
+ * Both sides are the FULL transitive closure (Maven and Gradle resolvers both walk
+ * the graph), so a direct-dep bump also surfaces the transitives it newly pulls in or
+ * re-versions — deliberate for a supply-chain scanner: a new transitive is a new risk.
  * <p>
  * Classification:
  * ADDED          → dep in head only → evaluated (previous = null)
@@ -188,28 +193,44 @@ public class DiffCommand implements Callable<Integer> {
                 .toList());
         executor.shutdown();
 
-        // Assemble findings
+        // Assemble findings. Head-side deps whose descriptor could not be read are scored
+        // but flagged: their subtree was never walked — exactly the surface a PR comment
+        // must not report clean (S06).
+        Set<String> unexpandedGas = headRoute.resolver().unexpandedSubtrees().stream()
+                .map(Coordinates::toGa)
+                .collect(Collectors.toSet());
+        // Introduced-by paths come from the head resolution: a transitive that is new on
+        // head must show which (bumped) direct dragged it in — same attachment as scan.
+        Map<String, List<List<DependencyPathNode>>> headPaths = headRoute.resolver().dependencyPaths();
         List<Finding> findings = new ArrayList<>();
 
         for (Coordinates head : added) {
             if (CliHelper.isUnresolved(head)) {
-                findings.add(Finding.unresolved(head));
+                findings.add(CliHelper.attachPaths(Finding.unresolved(head), headPaths));
                 continue;
             }
             VersionMetadata current = metaByGav.getOrDefault(head.toGav(), CliHelper.stub(head));
-            findings.add(CliHelper.toFinding(head, null, current, null, engine, highReps));
+            Finding finding = CliHelper.toFinding(head, null, current, null, engine, highReps);
+            if (unexpandedGas.contains(head.toGa())) {
+                finding = finding.withUnexpandedSubtree();
+            }
+            findings.add(CliHelper.attachPaths(finding, headPaths));
         }
 
         for (DiffPair pair : changed) {
             Coordinates head = pair.head();
             if (CliHelper.isUnresolved(head)) {
-                findings.add(Finding.unresolved(head));
+                findings.add(CliHelper.attachPaths(Finding.unresolved(head), headPaths));
                 continue;
             }
             VersionMetadata current = metaByGav.getOrDefault(head.toGav(), CliHelper.stub(head));
             VersionMetadata previous = CliHelper.isUnresolved(pair.base()) ? null
                     : metaByGav.get(pair.base().toGav());
-            findings.add(CliHelper.toFinding(head, pair.base().version(), current, previous, engine, highReps));
+            Finding finding = CliHelper.toFinding(head, pair.base().version(), current, previous, engine, highReps);
+            if (unexpandedGas.contains(head.toGa())) {
+                finding = finding.withUnexpandedSubtree();
+            }
+            findings.add(CliHelper.attachPaths(finding, headPaths));
         }
 
         // Whitelist suppression. A matched GAV stays in the audit record but drops out of

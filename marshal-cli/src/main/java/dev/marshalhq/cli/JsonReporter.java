@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import dev.marshalhq.core.DependencyPathNode;
 import dev.marshalhq.core.Finding;
 import dev.marshalhq.core.Severity;
 
@@ -88,6 +89,30 @@ public class JsonReporter implements Reporter {
             node.put("risk_score", f.isUnresolved() ? 0 : f.riskScore());
             node.put("risk_level", f.isUnresolved() ? "unresolved"
                     : f.riskLevel().name().toLowerCase());
+            // Additive, emitted only when true: the dep is scored, but its descriptor was
+            // unreadable so its transitive subtree was never walked (unscanned).
+            if (f.hasUnexpandedSubtree()) {
+                node.put("subtree_unexpanded", true);
+            }
+            // Additive, emitted only when at least one path exists (same convention as
+            // subtree_unexpanded, so path-less outputs stay byte-identical): every path
+            // from a declared direct to this node, shortest first. Schema stays 1.0.
+            if (!f.introducedBy().isEmpty()) {
+                ArrayNode pathsNode = MAPPER.createArrayNode();
+                for (List<DependencyPathNode> path : f.introducedBy()) {
+                    ArrayNode pathNode = MAPPER.createArrayNode();
+                    for (DependencyPathNode hop : path) {
+                        ObjectNode hopNode = MAPPER.createObjectNode();
+                        hopNode.put("group", hop.groupId());
+                        hopNode.put("artifact", hop.artifactId());
+                        hopNode.put("version", hop.version());
+                        hopNode.put("direct", hop.direct());
+                        pathNode.add(hopNode);
+                    }
+                    pathsNode.add(pathNode);
+                }
+                node.set("introduced_by", pathsNode);
+            }
 
             ArrayNode signals = MAPPER.createArrayNode();
             if (!f.isUnresolved()) {

@@ -3,8 +3,10 @@ package dev.marshalhq.cli;
 import java.io.PrintWriter;
 import java.util.List;
 
+import dev.marshalhq.core.DependencyPathNode;
 import dev.marshalhq.core.Finding;
 import dev.marshalhq.core.RuleResult;
+import dev.marshalhq.core.Severity;
 
 /**
  * Markdown renderer — pure function: List<Finding> → GitHub Flavored Markdown.
@@ -67,11 +69,13 @@ public class MarkdownReporter implements Reporter {
         sb.append("<!-- marshal-bot -->\n");
         // Machine-readable signal for the Action: whether this result is worth a PR
         // comment at all. "actionable" means there is at least one flagged finding,
-        // advisory, or unresolved dependency. run.sh reads this marker instead of
-        // grepping the rendered body, so an all-safe diff can be left silent.
+        // advisory, unresolved dependency, or unexpanded subtree. run.sh reads this
+        // marker instead of grepping the rendered body, so an all-safe diff can be
+        // left silent.
         boolean actionable = report.flaggedCount() > 0
                 || report.advisoryCount() > 0
-                || report.unresolvedCount() > 0;
+                || report.unresolvedCount() > 0
+                || report.unexpandedSubtreeCount() > 0;
         sb.append("<!-- marshal:actionable=").append(actionable).append(" -->\n");
         sb.append("## 🛡 Marshal Dependency Analysis\n");
         sb.append("\n");
@@ -94,6 +98,19 @@ public class MarkdownReporter implements Reporter {
                 for (Finding f : report.unresolved()) {
                     sb.append("> - `").append(f.coordinates().toGa()).append("`\n");
                 }
+            }
+            sb.append("\n");
+        }
+
+        if (report.unexpandedSubtreeCount() > 0) {
+            int n = report.unexpandedSubtreeCount();
+            sb.append("> ⚠️ ").append(n)
+                    .append(" ").append(n == 1 ? "dependency subtree" : "dependency subtrees")
+                    .append(" could not be expanded — the dependencies beneath ")
+                    .append(n == 1 ? "it were" : "them were")
+                    .append(" not scanned; manual review recommended.\n");
+            for (Finding f : report.unexpandedSubtrees()) {
+                sb.append("> - `").append(f.coordinates().toGav()).append("`\n");
             }
             sb.append("\n");
         }
@@ -123,6 +140,15 @@ public class MarkdownReporter implements Reporter {
                     .append(" | ").append(escape(s.evidence()))
                     .append(" |\n");
         }
+        // Introduced-by path: RED/ORANGE only (YELLOW/GREEN stay path-less in markdown),
+        // shortest path only, and never for a declared direct (the reviewer already sees
+        // it in the build file diff).
+        if (f.riskLevel() == Severity.RED || f.riskLevel() == Severity.ORANGE) {
+            String path = pathCell(f);
+            if (path != null) {
+                sb.append("| Path | ").append(path).append(" |\n");
+            }
+        }
         sb.append("\n");
 
         // Recommendation
@@ -135,6 +161,34 @@ public class MarkdownReporter implements Reporter {
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────
+
+    /** Shortest introduced-by path as a table cell, or null when there is nothing to show. */
+    private static String pathCell(Finding f) {
+        List<List<DependencyPathNode>> paths = f.introducedBy();
+        if (paths.isEmpty()) {
+            return null;
+        }
+        List<DependencyPathNode> shortest = paths.get(0);
+        if (shortest.size() == 1 && shortest.get(0).direct()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < shortest.size(); i++) {
+            DependencyPathNode hop = shortest.get(i);
+            if (i > 0) {
+                sb.append(" -> ");
+            }
+            sb.append('`').append(hop.toGav()).append('`');
+            if (hop.direct()) {
+                sb.append(" (direct)");
+            }
+        }
+        int others = paths.size() - 1;
+        if (others > 0) {
+            sb.append(" (+").append(others).append(others == 1 ? " other path)" : " other paths)");
+        }
+        return sb.toString();
+    }
 
     private static String versionSpan(Finding f) {
         return f.fromVersion() != null

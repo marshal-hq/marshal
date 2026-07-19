@@ -8,7 +8,9 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,6 +24,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.marshalhq.core.Coordinates;
+import dev.marshalhq.core.DependencyPathNode;
 
 /**
  * Resolves Gradle project dependencies by shelling out to the project's own Gradle
@@ -30,11 +33,11 @@ import dev.marshalhq.core.Coordinates;
  * set to a temp JSON file, which is parsed here into the shared {@link Coordinates}
  * type — identical to what {@link PomDependencyResolver} emits.
  *
- * <p>Unlike the Maven path (direct-only, S13), Gradle resolution returns the full
- * transitive set with versions resolved post conflict resolution. v1 collapses to
- * unique {@code group:artifact:version} coordinates; the direct/transitive and
- * configuration metadata the init script emits is intentionally not surfaced
- * (would require changes outside marshal-resolvers).
+ * <p>Gradle resolution returns the full transitive set with versions resolved post
+ * conflict resolution, collapsed to unique {@code group:artifact:version} coordinates.
+ * The init script also emits the resolved graph's parent→child edges, from which
+ * {@link #dependencyPaths()} reconstructs the introduced-by path(s) for every node —
+ * identical semantics to the Maven side via the shared {@link DependencyPathBuilder}.
  */
 public class GradleDependencyResolver implements DependencyResolver {
 
@@ -62,6 +65,7 @@ public class GradleDependencyResolver implements DependencyResolver {
     static final GradleLocator DEFAULT_LOCATOR = GradleDependencyResolver::defaultLocate;
 
     private final ObjectMapper mapper = new ObjectMapper();
+    private volatile Map<String, List<List<DependencyPathNode>>> pathsByGa = Map.of();
     private final boolean includeTest;
     private final boolean noDaemon;
     private final Duration timeout;
@@ -213,7 +217,9 @@ public class GradleDependencyResolver implements DependencyResolver {
         JsonNode root = mapper.readTree(outJson.toFile());
         // Dedupe to unique group:artifact:version, preserving first-seen order.
         Map<String, Coordinates> unique = new LinkedHashMap<>();
-        for (JsonNode node : root) {
+        Map<String, String> versionByGa = new LinkedHashMap<>();
+        Set<String> directGas = new HashSet<>();
+        for (JsonNode node : root.path("modules")) {
             String group = text(node, "group");
             String name = text(node, "name");
             String version = text(node, "version");
@@ -222,8 +228,30 @@ public class GradleDependencyResolver implements DependencyResolver {
             }
             Coordinates c = new Coordinates(group, name, version);
             unique.putIfAbsent(c.toGav(), c);
+            versionByGa.putIfAbsent(c.toGa(), version);
+            if (node.path("direct").asBoolean(false)) {
+                directGas.add(c.toGa());
+            }
         }
+        Map<String, Set<String>> edges = new LinkedHashMap<>();
+        for (JsonNode edge : root.path("edges")) {
+            String fromGroup = text(edge, "fromGroup");
+            String fromName = text(edge, "fromName");
+            String toGroup = text(edge, "toGroup");
+            String toName = text(edge, "toName");
+            if (fromGroup == null || fromName == null || toGroup == null || toName == null) {
+                continue;
+            }
+            edges.computeIfAbsent(fromGroup + ":" + fromName, k -> new LinkedHashSet<>())
+                    .add(toGroup + ":" + toName);
+        }
+        this.pathsByGa = DependencyPathBuilder.build(versionByGa, directGas, edges);
         return List.copyOf(unique.values());
+    }
+
+    @Override
+    public Map<String, List<List<DependencyPathNode>>> dependencyPaths() {
+        return pathsByGa;
     }
 
     private static String text(JsonNode node, String field) {
